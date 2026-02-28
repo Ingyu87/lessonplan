@@ -31,8 +31,11 @@ function loadAnnualPlan() {
 function getUnitList(subject, grade) {
     const gradeBand = getGradeBand(grade);
     const annualPlan = loadAnnualPlan();
+    const gradeStr = String(grade);
 
-    const planEntry = annualPlan.find(p => p.교과 === subject && (p.학년 === grade || p.학년군 === gradeBand));
+    // 학년 정확 일치 우선 (4학년 선택 시 3학년 데이터가 반환되지 않도록)
+    let planEntry = annualPlan.find(p => p.교과 === subject && p.학년 === gradeStr);
+    if (!planEntry) planEntry = annualPlan.find(p => p.교과 === subject && p.학년군 === gradeBand);
     if (planEntry && planEntry.단원목록 && planEntry.단원목록.length > 0) {
         return planEntry.단원목록.map(u => ({
             단원번호: u.단원번호,

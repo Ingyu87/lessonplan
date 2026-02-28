@@ -124,7 +124,8 @@ async function fetchUnitsFromPlanJson(subject, grade) {
         if (!res.ok) return null;
         const plan = await res.json();
         if (!Array.isArray(plan)) return null;
-        const entry = plan.find(p => p.교과 === subject && (p.학년 === String(grade) || p.학년군 === gradeBand));
+        let entry = plan.find(p => p.교과 === subject && p.학년 === String(grade));
+        if (!entry) entry = plan.find(p => p.교과 === subject && p.학년군 === gradeBand);
         if (!entry || !entry.단원목록 || entry.단원목록.length === 0) return null;
         return entry.단원목록.map(u => ({
             단원번호: u.단원번호,

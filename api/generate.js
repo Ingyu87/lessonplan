@@ -9,7 +9,7 @@ export default async function handler(req, res) {
 
     const { grade, semester, subject, unit, lesson, unitName } = req.body || {};
     const resolvedUnit = unitName || unit || '';
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = (process.env.GEMINI_API_KEY || '').trim();
 
     if (!apiKey) {
         return res.status(500).json({ error: 'API Key not configured', details: 'Vercel 환경 변수에 GEMINI_API_KEY를 설정하세요.' });
@@ -51,14 +51,17 @@ export default async function handler(req, res) {
 `;
 
     try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`;
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent`;
         const body = {
             contents: [{ role: 'user', parts: [{ text: systemPrompt }] }],
             generationConfig: { responseMimeType: 'application/json' }
         };
         const apiRes = await fetch(url, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json; charset=utf-8' },
+            headers: {
+                'Content-Type': 'application/json; charset=utf-8',
+                'x-goog-api-key': apiKey
+            },
             body: JSON.stringify(body)
         });
         if (!apiRes.ok) {

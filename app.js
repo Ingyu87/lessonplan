@@ -290,7 +290,6 @@ function renderActivitiesRows(activities) {
             const 자료 = toDisplayText(a.자료 || '');
             const 유의점 = toDisplayText(a.유의점 || '');
             const 평가 = toDisplayText(a.평가 || '');
-            const 활동 = toKoreanOnly(toDisplayText(a.활동 || ''));
             const 자료유의점평가 = [
                 자료 ? `자료(◎) ${escapeHtml(자료).replace(/\n/g, '<br>')}` : '',
                 유의점 ? `유의점(유) ${escapeHtml(유의점).replace(/\n/g, '<br>')}` : '',
@@ -300,12 +299,10 @@ function renderActivitiesRows(activities) {
             const 학생Formatted = formatWithSymbols(학생 || '◦');
             const 교사Escaped = escapeHtml(교사Formatted).replace(/\n/g, '<br>');
             const 학생Escaped = escapeHtml(학생Formatted).replace(/\n/g, '<br>');
-            const 활동Escaped = escapeHtml(활동).replace(/\n/g, '<br>');
-            const 교사내용 = 활동 ? `${활동Escaped}<br><br>${교사Escaped}` : 교사Escaped;
             return `<tr>
         <td>${escapeHtml(a.단계 || '')}</td>
         <td>${escapeHtml(형태)}</td>
-        <td>${교사내용}</td>
+        <td>${교사Escaped}</td>
         <td>${학생Escaped || '◦'}</td>
         <td>${escapeHtml(시간)}</td>
         <td>${자료유의점평가}</td>

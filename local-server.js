@@ -93,6 +93,23 @@ function getAreaFromStandards(subject, gradeBand, unitName) {
     } catch (e) { return ''; }
 }
 
+/** AI가 성취기준 코드만 반환한 경우(문장 생략) 전체 문장으로 보완 */
+function ensureFullStandard(standard, subject, grade) {
+    if (!standard || typeof standard !== 'string') return standard;
+    const trimmed = standard.trim();
+    if (!/^\[\d+국\d+-\d+\]\s*$/.test(trimmed)) return standard;
+    const code = trimmed.match(/^(\[\d+국\d+-\d+\])/)?.[1] || trimmed;
+    try {
+        const standardsPath = path.join(baseDir, '2022개정교육과정 성취기준 및 해설.json');
+        if (!fs.existsSync(standardsPath)) return standard;
+        const standards = JSON.parse(fs.readFileSync(standardsPath, 'utf8'));
+        const gradeBand = getGradeBand(grade);
+        const filtered = standards.filter(s => s.교과 === subject && s.학년 === gradeBand);
+        const full = filtered.find(s => (s.성취기준 || '').startsWith(code))?.성취기준;
+        return full || standard;
+    } catch (e) { return standard; }
+}
+
 // 연간지도 계획 로드 (연간지도_계획.json 또는 연간지도_계획_템플릿.json)
 function loadAnnualPlan() {
     const planPath = path.join(baseDir, '연간지도_계획.json');
@@ -442,10 +459,16 @@ app.post('/api/generate', async (req, res) => {
 - 수업안은 **상당히 상세하게** 작성하세요. 교사 열에는 **주요 활동**(자료 제시·지도 절차·설명 등)과 **발문**(질문 문장)을 모두 적으세요. 예: "○○○를 실물화상기로 제시한다." "선생님이 지금 무엇을 하고 있나요?"처럼 교사가 하는 구체적 활동을 먼저 쓰고, 그 다음 발문을 적습니다. 학생 열에는 예상 반응, 활동 내용, 산출물, 모둠별 역할 등을 구체적으로 적으세요.
 - **실제 수업에서 그대로 진행할 수 있는** 수준으로 작성하세요. 추상적 요약이 아니라 "교사가 할 말·할 일", "학생이 할 말·할 일"이 드러나도록 하세요.
 - **교수·학습 활동**은 **도입 1개** + **전개 3개**(활동1·활동2·활동3, 실현 어려우면 2개) + **정리 1개**. 전개에서 탐구질문·문제 해결을 위한 활동, 정리에서 마무리 활동을 제시하세요.
+
+[★★★ 교과·단원·차시에 맞게 활동 내용 구체화 - 반드시 준수 ★★★]
+- **교과·단원·차시별 주요활동이 다르면 활동 내용이 완전히 달라야 함.** 같은 템플릿(자료 배부→모둠 탐구→발표)을 모든 수업에 적용하지 말 것.
+- 예: 국어 "인물 관계·이야기 흐름" → 읽기 자료·인물 관계도·이야기 흐름 파악. 국어 "대화 생략 추론" → 대화 상황 카드·생략된 내용 짐작. 수학 "합동" → 도형 자료·합동 판별·성질 탐구. 수학 "분수의 덧셈" → 분수 모델·계산·문제 해결.
+- 교사·학생 열에 **해당 차시 학습 내용에 맞는** 구체적 자료명, 발문, 활동, 예상 반응을 작성할 것. "자료를 배부한다", "모둠별로 탐구한다" 같은 추상적 표현만 반복하지 말 것.
+- 활동 이름(활동 필드)도 차시에 맞게 구체화할 것. 예: "활동1 - 인물 관계 파악하기", "활동1 - 대화에서 생략된 내용 짐작하기", "활동1 - 합동인 도형 찾기".
 - 모든 문장은 **한국어만** 사용하세요. 영어 레이블(competency, standard 등)은 사용하지 마세요.
 - competency: 해당 교과 역량. area: 위 [성취기준]에 나온 해당 차시·단원의 영역.
 - coreIdea(핵심 아이디어): [핵심 아이디어] 참고에 해당 영역이 있으면 그걸 기반으로, 해당 차시의 학습 맥락(단원·주요 학습 내용·탐구 질문)에 맞게 재진술. 영역 핵심 아이디어는 그대로 두되, 차시에 맞게 수정·적용 가능. 성취기준 코드([4국03-02] 등) 넣지 말 것.
-- standard(성취기준): [이 차시에 적합한 성취기준] 섹션에 제시된 것 중에서 **반드시** 선택. 해당 차시와 무관한 성취기준(예: 관점, 표현의도는 다른 차시) 사용 금지.
+- standard(성취기준): [이 차시에 적합한 성취기준] 섹션에 제시된 것 중에서 **반드시** 선택. [4국03-02] 코드와 설명 문장 **전체**를 그대로 복사할 것. 코드만 넣지 말 것.
 - objective(학습 목표): [연간지도 계획] 해당 차시 "주요 학습 내용 및 활동" 내용을 **그대로** 반영. 축약·변형·다른 내용으로 대체 금지.
 - topic(학습 주제): 차시별 주요활동 내용을 **그대로** 반영. 해당 차시와 무관한 내용 넣지 말 것.
 - intent: 수업·평가 주안점을 두고 작성한 수업자의 의도. 이 의도에 맞게 평가계획을 설계한다.
@@ -458,7 +481,7 @@ app.post('/api/generate', async (req, res) => {
   "competency": "교과 역량",
   "area": "해당 교과 교육과정의 영역 (예: 듣기·말하기, 읽기, 문학, 매체)",
   "coreIdea": "핵심 아이디어 (영역 핵심 아이디어를 기반으로 해당 차시에 맞게 재진술)",
-  "standard": "성취기준만 ([4국03-02] 형태 코드+문장. 핵심 아이디어 문장 넣지 말 것)",
+  "standard": "위 [성취기준] 목록에서 선택. 코드+문장 전체를 그대로 복사. 코드만 넣지 말 것.",
   "question": "탐구 질문",
   "objective": "학습 목표 한 문장",
   "topic": "학습 주제",
@@ -510,6 +533,9 @@ ${refContextClean}
         const jsonStr = text.replace(/```json/g, '').replace(/```/g, '').trim();
         try {
             const data = JSON.parse(jsonStr);
+            if (data.standard && /^\[\d+국\d+-\d+\]\s*$/.test(String(data.standard).trim())) {
+                data.standard = ensureFullStandard(data.standard, subject || '국어', grade || '3');
+            }
             if (!data.area || String(data.area).trim() === '') {
                 const gradeBand = getGradeBand(grade || '3');
                 const area = getAreaFromStandards(subject || '국어', gradeBand, resolvedUnitName);

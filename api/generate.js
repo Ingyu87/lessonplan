@@ -75,6 +75,7 @@ function getStandardsBlock(grade, subject, unitName, chasiContent) {
             rest = filtered.slice(0, 18);
         }
         const fallback = (matched[0] || rest[0])?.성취기준 || '';
+        const standardsForLookup = filtered;
         let block = '\n[성취기준 - 반드시 이 중에서 선택하여 standard 필드에 넣을 것]\n';
         if (matched.length > 0) {
             block += '[★★ 이 차시에 적합한 성취기준 - 우선 선택 ★★]\n';
@@ -92,10 +93,21 @@ function getStandardsBlock(grade, subject, unitName, chasiContent) {
                 if (s['성취기준 해설']) block += `  해설: ${s['성취기준 해설']}\n`;
             });
         }
-        return { block, fallback };
+        return { block, fallback, standardsForLookup };
     } catch (e) {
-        return { block: '', fallback: '' };
+        return { block: '', fallback: '', standardsForLookup: [] };
     }
+}
+
+/** AI가 코드만 반환한 경우(문장 생략) 전체 문장으로 보완 */
+function ensureFullStandard(standard, standardsForLookup) {
+    if (!standard || typeof standard !== 'string') return standard;
+    const trimmed = standard.trim();
+    const codeOnly = /^\[\d+국\d+-\d+\]\s*$/;
+    if (!codeOnly.test(trimmed)) return standard;
+    const code = trimmed.match(/^(\[\d+국\d+-\d+\])/)?.[1] || trimmed;
+    const full = standardsForLookup.find(s => (s.성취기준 || '').startsWith(code))?.성취기준;
+    return full || standard;
 }
 
 function getCoreIdeaFromFile(subject, area) {
@@ -155,7 +167,7 @@ export default async function handler(req, res) {
         ? `\n[★★★ 이 차시의 핵심 - 반드시 그대로 반영, 축약·변형·다른 내용 대체 금지 ★★★]\n${lesson}차시 주요 학습 내용 및 활동: ${chasiContent}\n`
         : '';
 
-    const { block: standardsBlock, fallback: standardsFallback } = getStandardsBlock(grade, subject || '국어', resolvedUnit, chasiContent);
+    const { block: standardsBlock, fallback: standardsFallback, standardsForLookup } = getStandardsBlock(grade, subject || '국어', resolvedUnit, chasiContent);
 
     const modelId = "gemini-2.5-flash";
     const systemPrompt = `
@@ -183,6 +195,12 @@ ${standardsBlock}
 4. 교수·학습 활동: 도입 1개 + 전개 3개(활동1·활동2·활동3, 실현 어려우면 2개) + 정리 1개. 전개에서 탐구질문·문제 해결을 위한 활동, 정리에서 마무리 활동을 제시.
 5. model: 해당 차시 단원에 가장 적합한 교수학습 모형을 추천하여 한 문장으로 작성.
 
+[★★★ 교수·학습 활동 - 반드시 해당 차시에 맞게 구체화 ★★★]
+- 교과·단원·차시별 주요활동이 다르면 활동 내용이 완전히 달라야 함. 같은 템플릿을 모든 수업에 적용하지 말 것.
+- 예: 국어 "인물 관계·이야기 흐름" → 읽기 자료·인물 관계도·이야기 흐름 파악 활동. 국어 "대화 생략 추론" → 대화 자료·생략된 내용 짐작 활동. 수학 "합동" → 도형·합동 판별·성질 탐구 활동.
+- 교사·학생 열에 해당 차시 학습 내용에 맞는 구체적 자료명, 발문, 활동, 예상 반응을 작성할 것. "자료를 배부한다", "모둠별로 탐구한다" 같은 추상적 표현만 쓰지 말 것.
+- 활동 이름(활동 필드)도 차시에 맞게 구체화할 것. 예: "활동1 - 인물 관계 파악하기", "활동1 - 대화에서 생략된 내용 짐작하기", "활동1 - 합동인 도형 찾기".
+
 [출력 형식 - 순수 JSON만]
 마크다운 없이 JSON만 반환하세요.
 - area: 해당 교과 교육과정의 영역 (예: 듣기·말하기, 읽기, 문학, 매체).
@@ -194,7 +212,7 @@ ${standardsBlock}
   "competency": "교과 역량",
   "area": "해당 교과 영역",
   "coreIdea": "핵심 아이디어 (영역 핵심 아이디어를 기반으로 해당 차시에 맞게 재진술)",
-  "standard": "위 [성취기준] 목록에서 반드시 선택 ([4국03-02] 형태. 비워두지 말 것)",
+  "standard": "위 [성취기준] 목록에서 반드시 선택. [4국03-02] 코드와 설명 문장 전체를 그대로 복사할 것. 코드만 넣지 말 것.",
   "question": "탐구 질문",
   "objective": "학습 목표 한 문장",
   "topic": "학습 주제",
@@ -241,6 +259,8 @@ ${standardsBlock}
 
         if (!data.standard || String(data.standard).trim() === '') {
             if (standardsFallback) data.standard = standardsFallback;
+        } else if (standardsForLookup.length > 0) {
+            data.standard = ensureFullStandard(data.standard, standardsForLookup);
         }
         if (!data.coreIdea || String(data.coreIdea).trim() === '') {
             const coreIdea = getCoreIdeaFromFile(subject || '국어', data.area);

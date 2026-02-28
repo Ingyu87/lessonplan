@@ -25,6 +25,35 @@ function getGradeBand(grade) {
     return '5~6학년';
 }
 
+/** 성취기준에서 해당 단원·차시의 영역 추출 (AI가 area를 비워둘 때 폴백) */
+function getAreaFromStandards(subject, gradeBand, unitName) {
+    try {
+        const standardsPath = path.join(baseDir, '2022개정교육과정 성취기준 및 해설.json');
+        if (!fs.existsSync(standardsPath)) return '';
+        const standards = JSON.parse(fs.readFileSync(standardsPath, 'utf8'));
+        let filtered = standards.filter(s => s.교과 === subject && s.학년 === gradeBand);
+        if (unitName) {
+            const u = String(unitName);
+            const unitFiltered = filtered.filter(s => s.단원 && (
+                s.단원.includes(u) || u.includes(s.단원) || s.단원 === u
+            ));
+            if (unitFiltered.length > 0) filtered = unitFiltered;
+            else if (u.includes('독서')) {
+                const r = filtered.find(s => s.영역 === '읽기');
+                if (r) return r.영역;
+            } else if (u.includes('매체')) {
+                const r = filtered.find(s => s.영역 === '매체');
+                if (r) return r.영역;
+            } else if (u.includes('문학')) {
+                const r = filtered.find(s => s.영역 === '문학');
+                if (r) return r.영역;
+            }
+        }
+        const first = filtered[0];
+        return first && first.영역 ? first.영역 : '';
+    } catch (e) { return ''; }
+}
+
 // 연간지도 계획 로드 (연간지도_계획.json 또는 연간지도_계획_템플릿.json)
 function loadAnnualPlan() {
     const planPath = path.join(baseDir, '연간지도_계획.json');
@@ -142,10 +171,11 @@ function loadReferenceMaterials(subject, grade, unitName, lesson) {
             }
             filtered = filtered.slice(0, 18);
             if (filtered.length > 0) {
-                context += '\n[성취기준]\n';
+                context += '\n[성취기준 - 영역 포함]\n';
                 filtered.forEach(s => {
+                    const areaPart = s.영역 ? ` [영역: ${s.영역}]` : '';
                     const unitPart = s.단원 ? ` [단원: ${s.단원}]` : '';
-                    context += `- ${s.성취기준}${unitPart}\n`;
+                    context += `- ${s.성취기준}${areaPart}${unitPart}\n`;
                     if (s['성취기준 해설']) context += `  해설: ${s['성취기준 해설']}\n`;
                 });
             }
@@ -299,19 +329,28 @@ app.post('/api/generate', async (req, res) => {
 - **실제 수업에서 그대로 진행할 수 있는** 수준으로 작성하세요. 추상적 요약이 아니라 "교사가 할 말·할 일", "학생이 할 말·할 일"이 드러나도록 하세요.
 - 도입/전개/정리 단계별로 **여러 행**을 두세요. 전개 단계는 해당 차시의 주요 학습 내용을 세부 활동으로 나누어 2~5개 행으로 작성하세요(예: 활동1 탐구 질문 제시, 활동2 모둠 탐구, 활동3 발표·정리 등).
 - 모든 문장은 **한국어만** 사용하세요. 영어 레이블(competency, standard 등)은 사용하지 마세요.
-- competency: 해당 교과 역량 및 영역을 한글로. standard: 성취기준 문장 및 핵심 아이디어 반영. question: 탐구 질문 한 문장. objective: 학습 목표·학습 주제. intent: 수업자의 의도(수업·평가 주안점). feedback: 성취수준 상/중/하 진술 및 피드백 방안.
-- model: 해당 차시·단원에 가장 적합한 교수·학습 모형을 추천하여 한 문장으로 작성 (예: 개념 형성 모형, 문제 해결 학습 모형, 탐구 학습 모형 등).
+- competency: 해당 교과 역량. area(영역): 위 [성취기준]에 나온 해당 차시·단원의 영역을 그대로 기재 (예: 듣기·말하기, 읽기, 문학, 매체, 독서 등).
+- objective(학습 목표): "~할 수 있다" 형태의 학습 목표 한 문장만.
+- topic(학습 주제): 이 차시에서 다루는 구체적 주제·내용 (학습 목표와 구분하여 별도로).
+- intent: 수업자의 의도(수업·평가 주안점).
+- evaluationPlan: 평가 계획을 표 형태로 작성. 각 행은 범주(평가 방법), 평가 요소, 수준(상/중/하), 피드백을 포함. 성취수준 자료를 참고하여 지식·이해, 과정·기능, 가치·태도 등 범주별로 1~3행 작성.
+- model: 해당 차시·단원에 가장 적합한 교수·학습 모형 추천.
 
 [출력 형식 - 순수 JSON만]
 마크다운 코드블록 없이 JSON만 반환하세요.
 {
-  "competency": "교과 역량 및 영역(한글)",
+  "competency": "교과 역량",
+  "area": "해당 교과 교육과정의 영역 (예: 듣기·말하기, 읽기, 문학, 매체)",
   "standard": "성취기준 및 핵심 아이디어",
   "question": "탐구 질문",
-  "objective": "학습 목표·학습 주제",
-  "intent": "수업자 의도(수업·평가 주안점)",
-  "feedback": "성취수준(상/중/하) 및 피드백 방안",
-  "model": "해당 차시에 맞는 교수·학습 모형",
+  "objective": "학습 목표 한 문장",
+  "topic": "학습 주제",
+  "intent": "수업자 의도",
+  "feedback": "성취수준(상/중/하) 및 피드백 방안 (evaluationPlan 없을 때 사용)",
+  "evaluationPlan": [
+    { "category": "지식·이해(관찰)", "element": "평가 요소", "high": "상 수준 진술", "middle": "중 수준 진술", "low": "하 수준 진술", "feedback": "피드백 방안" }
+  ],
+  "model": "교수·학습 모형",
   "activities": [
     { "단계": "도입", "형태": "전체", "활동": "활동 요약", "시간": "3", "자료": "자료명", "유의점": "유의사항", "평가": "", "교사": "구체적인 발문·설명·지도 내용", "학생": "예상 반응·활동 내용" },
     { "단계": "전개", "형태": "모둠", "활동": "활동1 요약", "시간": "10", "자료": "", "유의점": "", "평가": "관찰 등", "교사": "구체적 발문 및 지도", "학생": "구체적 활동 및 산출" },
@@ -349,6 +388,11 @@ ${refContextClean}
         const jsonStr = text.replace(/```json/g, '').replace(/```/g, '').trim();
         try {
             const data = JSON.parse(jsonStr);
+            if (!data.area || String(data.area).trim() === '') {
+                const gradeBand = getGradeBand(grade || '3');
+                const area = getAreaFromStandards(subject || '국어', gradeBand, resolvedUnitName);
+                if (area) data.area = area;
+            }
             res.status(200).json(data);
         } catch (parseError) {
             console.error('JSON 파싱 에러. 원본 텍스트:', text);

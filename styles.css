@@ -276,6 +276,12 @@ input::placeholder {
 .result-header h2 {
     margin-bottom: 0;
 }
+.copy-hint {
+    font-size: 0.75rem;
+    font-weight: 400;
+    color: var(--text-muted);
+    margin-left: 0.35rem;
+}
 
 .action-buttons {
     display: flex;
@@ -362,6 +368,11 @@ input::placeholder {
     border: 1px solid var(--border);
     padding: 0.45rem 0.6rem;
     vertical-align: top;
+    cursor: pointer;
+}
+.yakan-table th:hover,
+.yakan-table td:hover {
+    background: rgba(78, 205, 196, 0.08);
 }
 
 .yakan-table th {
@@ -392,6 +403,14 @@ input::placeholder {
 .yakan-table.yakan-activities th:nth-child(3),
 .yakan-table.yakan-activities td:nth-child(3) {
     min-width: 180px;
+}
+
+.yakan-table.yakan-eval {
+    margin-bottom: 0;
+}
+.yakan-table.yakan-eval th {
+    width: auto;
+    font-size: 0.8rem;
 }
 
 /* ===== 토스트 ===== */

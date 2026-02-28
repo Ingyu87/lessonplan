@@ -54,6 +54,20 @@ document.addEventListener('DOMContentLoaded', () => {
             elements.inputs.lesson.placeholder = `1~${sel.차시수}차시`;
         }
     });
+
+    // 칸 클릭 시 클립보드 복사
+    elements.yakanOutput?.addEventListener('click', async (e) => {
+        const cell = e.target.closest('td, th');
+        if (!cell) return;
+        const text = cell.innerText?.trim();
+        if (!text) return;
+        try {
+            await navigator.clipboard.writeText(text);
+            showToast('복사됨');
+        } catch (err) {
+            showToast('복사 실패');
+        }
+    });
 });
 
 function setUnitSelectEmpty(message) {
@@ -299,6 +313,23 @@ function formatActivitiesForFallback(activities) {
     return toKoreanOnly(toDisplayText(activities));
 }
 
+/** 평가 계획 표 렌더링 (범주/평가요소/수준/피드백) */
+function renderEvaluationPlan(evaluationPlan, feedback) {
+    if (Array.isArray(evaluationPlan) && evaluationPlan.length > 0) {
+        const rows = evaluationPlan.map((ep) => {
+            const cat = escapeHtml(toDisplayText(ep.category || ''));
+            const el = escapeHtml(toDisplayText(ep.element || '')).replace(/\n/g, '<br>');
+            const h = escapeHtml(toDisplayText(ep.high || '')).replace(/\n/g, '<br>');
+            const m = escapeHtml(toDisplayText(ep.middle || '')).replace(/\n/g, '<br>');
+            const l = escapeHtml(toDisplayText(ep.low || '')).replace(/\n/g, '<br>');
+            const fb = escapeHtml(toDisplayText(ep.feedback || '')).replace(/\n/g, '<br>');
+            return `<tr><td>${cat}</td><td>${el}</td><td>${h}</td><td>${m}</td><td>${l}</td><td>${fb}</td></tr>`;
+        }).join('');
+        return `<table class="yakan-table yakan-eval"><thead><tr><th>범주(평가 방법)</th><th>평가 요소</th><th colspan="3">수준</th><th>피드백</th></tr><tr><th></th><th></th><th>상</th><th>중</th><th>하</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+    }
+    return escapeHtml((feedback || '').replace(/\n/g, '<br>')) || '-';
+}
+
 /** AI가 넣은 영문 레이블을 한글로 치환 (표시용) */
 function toKoreanOnly(text) {
     if (!text || typeof text !== 'string') return text;
@@ -320,9 +351,11 @@ function renderYakanFormat(data) {
     const totalLesson = unitList.find(u => u.단원명 === unitVal)?.차시수 || '';
 
     const competency = toKoreanOnly(toDisplayText(data.competency));
+    const area = toKoreanOnly(toDisplayText(data.area));
     const standard = toKoreanOnly(toDisplayText(data.standard));
     const question = toKoreanOnly(toDisplayText(data.question));
     const objective = toKoreanOnly(toDisplayText(data.objective));
+    const topic = toKoreanOnly(toDisplayText(data.topic));
     const intent = toKoreanOnly(toDisplayText(data.intent));
     const feedback = toKoreanOnly(toDisplayText(data.feedback));
 
@@ -362,7 +395,7 @@ function renderYakanFormat(data) {
   <div class="yakan-section-title">교육과정 분석 (차시)</div>
   <table class="yakan-table yakan-analysis">
     <tr><th>교과 역량</th><td>${escapeHtml(competency).replace(/\n/g, '<br>') || '-'}</td></tr>
-    <tr><th>영역</th><td>해당 교과 교육과정에서 기재</td></tr>
+    <tr><th>영역</th><td>${escapeHtml(area || '해당 교과 교육과정에서 기재')}</td></tr>
     <tr><th>핵심 아이디어</th><td>${escapeHtml(standard).replace(/\n/g, '<br>').substring(0, 300) || '-'}</td></tr>
     <tr><th>성취기준</th><td>${escapeHtml(standard).replace(/\n/g, '<br>') || '-'}</td></tr>
     <tr><th>탐구 질문</th><td>${escapeHtml(question).replace(/\n/g, '<br>') || '-'}</td></tr>
@@ -370,9 +403,9 @@ function renderYakanFormat(data) {
 
   <table class="yakan-table yakan-goals">
     <tr><th>학습 목표</th><td>${escapeHtml(objective).replace(/\n/g, '<br>') || '-'}</td></tr>
-    <tr><th>학습 주제</th><td>${escapeHtml(objective).replace(/\n/g, '<br>') || '-'}</td></tr>
+    <tr><th>학습 주제</th><td>${escapeHtml(topic).replace(/\n/g, '<br>') || '-'}</td></tr>
     <tr><th>수업자 의도<br>(수업·평가 주안점)</th><td>${escapeHtml(intent).replace(/\n/g, '<br>') || '-'}</td></tr>
-    <tr><th>평가 계획</th><td>${escapeHtml(feedback).replace(/\n/g, '<br>') || '-'}</td></tr>
+    <tr><th>평가 계획</th><td>${renderEvaluationPlan(data.evaluationPlan, feedback)}</td></tr>
   </table>
 
   <div class="yakan-section-title">교수·학습 활동</div>
@@ -448,14 +481,22 @@ function handleDownload() {
 
     const analysisRows = [
         new TableRow({ children: [cell('교과 역량'), cell(toKoreanOnly(toDisplayText(d.competency)))] }),
+        new TableRow({ children: [cell('영역'), cell(toKoreanOnly(toDisplayText(d.area)) || '해당 교과 교육과정에서 기재')] }),
         new TableRow({ children: [cell('성취기준'), cell(toKoreanOnly(toDisplayText(d.standard)))] }),
         new TableRow({ children: [cell('탐구 질문'), cell(toKoreanOnly(toDisplayText(d.question)))] }),
     ];
 
+    const evalPlanText = Array.isArray(d.evaluationPlan) && d.evaluationPlan.length > 0
+        ? d.evaluationPlan.map(ep =>
+            `${toDisplayText(ep.category)} | ${toDisplayText(ep.element)} | 상:${toDisplayText(ep.high)} 중:${toDisplayText(ep.middle)} 하:${toDisplayText(ep.low)} | ${toDisplayText(ep.feedback)}`
+        ).join('\n')
+        : toDisplayText(d.feedback);
+
     const goalRows = [
         new TableRow({ children: [cell('학습 목표'), cell(toKoreanOnly(toDisplayText(d.objective)))] }),
+        new TableRow({ children: [cell('학습 주제'), cell(toKoreanOnly(toDisplayText(d.topic)))] }),
         new TableRow({ children: [cell('수업자 의도'), cell(toKoreanOnly(toDisplayText(d.intent)))] }),
-        new TableRow({ children: [cell('평가 계획'), cell(toKoreanOnly(toDisplayText(d.feedback)))] }),
+        new TableRow({ children: [cell('평가 계획'), cell(toKoreanOnly(evalPlanText))] }),
     ];
 
     const activityHeaderRow = new TableRow({

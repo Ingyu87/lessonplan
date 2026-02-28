@@ -278,12 +278,12 @@ function renderActivitiesRows(activities) {
         <td>${escapeHtml(a.단계 || '')}</td>
         <td>${escapeHtml(형태)}</td>
         <td>${escapeHtml(활동).replace(/\n/g, '<br>')}</td>
+        <td>${escapeHtml(교사).replace(/\n/g, '<br>') || '◉'}</td>
+        <td>${escapeHtml(학생).replace(/\n/g, '<br>') || '◦'}</td>
         <td>${escapeHtml(시간)}</td>
         <td>${escapeHtml(자료).replace(/\n/g, '<br>')}</td>
         <td>${escapeHtml(유의점).replace(/\n/g, '<br>')}</td>
         <td>${escapeHtml(평가)}</td>
-        <td>${escapeHtml(교사).replace(/\n/g, '<br>') || '◉'}</td>
-        <td>${escapeHtml(학생).replace(/\n/g, '<br>') || '◦'}</td>
       </tr>`;
         }).join('');
     }
@@ -292,12 +292,12 @@ function renderActivitiesRows(activities) {
       <td>도입/전개/정리</td>
       <td></td>
       <td>${escapeHtml(activitiesText).replace(/\n/g, '<br>') || '-'}</td>
-      <td></td>
-      <td></td>
-      <td></td>
-      <td></td>
       <td>◉</td>
       <td>◦</td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
     </tr>`;
 }
 
@@ -508,13 +508,13 @@ function handleDownload() {
         children: [
             cell('학습 단계'),
             cell('학습형태'),
-            cell('교수·학습 활동'),
+            cell('활동'),
+            cell('교사'),
+            cell('학생'),
             cell('시간(분)'),
             cell('자료'),
             cell('유의점'),
             cell('평가'),
-            cell('교사'),
-            cell('학생'),
         ],
     });
     const activityDataRows = Array.isArray(d.activities) && d.activities.length > 0
@@ -523,12 +523,12 @@ function handleDownload() {
                 cell(a.단계 || ''),
                 cell(toDisplayText(a.형태)),
                 cell(toKoreanOnly(toDisplayText(a.활동))),
+                cell(toKoreanOnly(toDisplayText(a.교사)) || '◉'),
+                cell(toKoreanOnly(toDisplayText(a.학생)) || '◦'),
                 cell(toDisplayText(a.시간)),
                 cell(toDisplayText(a.자료)),
                 cell(toDisplayText(a.유의점)),
                 cell(toDisplayText(a.평가)),
-                cell(toKoreanOnly(toDisplayText(a.교사)) || '◉'),
-                cell(toKoreanOnly(toDisplayText(a.학생)) || '◦'),
             ],
         }))
         : [new TableRow({
@@ -536,12 +536,12 @@ function handleDownload() {
                 cell('도입/전개/정리'),
                 cell(''),
                 cell(toKoreanOnly(toDisplayText(d.activities))),
-                cell(''),
-                cell(''),
-                cell(''),
-                cell(''),
                 cell('◉'),
                 cell('◦'),
+                cell(''),
+                cell(''),
+                cell(''),
+                cell(''),
             ],
         })];
 

@@ -262,6 +262,22 @@ function escapeHtml(s) {
     return div.innerHTML;
 }
 
+/** 교사·학생 내용에 기호(●, ○, -)가 없으면 문장별로 - 붙임. 문장은 줄바꿈 또는 . ? ! 로 구분 */
+function formatWithSymbols(text) {
+    if (!text || typeof text !== 'string') return text;
+    const hasSymbol = (s) => /^(●|○|[-–—]\s?)/.test((s || '').trim());
+    let parts = text.split(/\n/).filter((s) => s.trim());
+    if (parts.length <= 1 && parts[0]) {
+        const s = parts[0];
+        if (!hasSymbol(s)) {
+            const sentences = s.split(/(?<=[.?!])\s+/).filter((x) => x.trim());
+            parts = sentences.length > 1 ? sentences : [s];
+        }
+    }
+    if (parts.length === 0) return text;
+    return parts.map((line) => (hasSymbol(line) ? line : `- ${line.trim()}`)).join('\n');
+}
+
 /** 교수·학습 활동 행 렌더링 (수학과 예시 형식: 교사|학생|시간|자료·유의점·평가) */
 function renderActivitiesRows(activities) {
     if (Array.isArray(activities) && activities.length > 0) {
@@ -279,14 +295,17 @@ function renderActivitiesRows(activities) {
                 유의점 ? `유의점(유) ${escapeHtml(유의점).replace(/\n/g, '<br>')}` : '',
                 평가 ? `평가(㉞) ${escapeHtml(평가).replace(/\n/g, '<br>')}` : ''
             ].filter(Boolean).join('<br><br>');
-            const 교사Escaped = escapeHtml(교사 || '◉').replace(/\n/g, '<br>');
+            const 교사Formatted = formatWithSymbols(교사 || '◉');
+            const 학생Formatted = formatWithSymbols(학생 || '◦');
+            const 교사Escaped = escapeHtml(교사Formatted).replace(/\n/g, '<br>');
+            const 학생Escaped = escapeHtml(학생Formatted).replace(/\n/g, '<br>');
             const 활동Escaped = escapeHtml(활동).replace(/\n/g, '<br>');
             const 교사내용 = 활동 ? `${활동Escaped}<br><br>${교사Escaped}` : 교사Escaped;
             return `<tr>
         <td>${escapeHtml(a.단계 || '')}</td>
         <td>${escapeHtml(형태)}</td>
         <td>${교사내용}</td>
-        <td>${escapeHtml(학생).replace(/\n/g, '<br>') || '◦'}</td>
+        <td>${학생Escaped || '◦'}</td>
         <td>${escapeHtml(시간)}</td>
         <td>${자료유의점평가}</td>
       </tr>`;

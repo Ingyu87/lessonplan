@@ -1,50 +1,53 @@
 // Vercel Serverless Function: api/generate.js
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
+export const config = { api: { bodyParser: true } };
+
 export default async function handler(req, res) {
     if (req.method !== 'POST') {
         return res.status(405).json({ error: 'Method Not Allowed' });
     }
 
-    const { grade, semester, subject, unit, lesson } = req.body;
+    const { grade, semester, subject, unit, lesson, unitName } = req.body || {};
+    const resolvedUnit = unitName || unit || '';
     const apiKey = process.env.GEMINI_API_KEY;
 
     if (!apiKey) {
-        return res.status(500).json({ error: 'API Key not configured' });
+        return res.status(500).json({ error: 'API Key not configured', details: 'Vercel 환경 변수에 GEMINI_API_KEY를 설정하세요.' });
     }
 
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
     const systemPrompt = `
-당신은 "초등학교 수업 설계 전문가"입니다. 사용자는 "초등학교 교사"입니다.
-2022 개정 교육과정 가이드라인을 엄격히 준수하여 교수·학습 과정안을 작성하세요.
+당신은 2022 개정 교육과정에 정통한 "초등학교 수업 설계 전문가"입니다.
+2022 개정 교육과정 가이드라인을 준수하여 교수·학습 과정안(약안) 초안을 작성하세요.
 
 [입력 정보]
-- 학년: ${grade}학년
-- 학기: ${semester}학기
-- 교과: ${subject}
-- 단원: ${unit}
-- 차시: ${lesson}
+- 학년: ${grade}학년, 학기: ${semester}학기, 교과: ${subject}
+- 단원: ${resolvedUnit}
+- 차시: ${lesson}차시
 
 [작성 원칙]
 1. 모든 출력은 한국어로 작성.
-2. 핵심 아이디어 재진술 원칙: 현재형, 중립적 동사, 개념어만 포함, 가치 판단 배제.
-3. 탐구질문: 실질적 사고 유도, 학생 수준에 맞는 발문.
-4. 활동 설계: 학생 참여형, 2-3개 활동 포함, 40분 단위, 수업모형 적용.
-5. 성취수준: 상/중/하 각각 한 문장으로 작성.
-6. 피드백: 구체적 방안 기술 ("~한다." 형태).
+2. activities는 반드시 배열로 작성. 각 항목에 단계, 형태, 활동, 시간, 자료, 유의점, 평가, 교사, 학생 필드를 포함.
+3. 교사·학생 열에 구체적인 발문·지도 내용과 예상 반응·활동을 작성.
+4. 도입/전개/정리 단계별로 2~5개 행 작성.
 
-[출력 형식]
-JSON 형식으로 반환하세요:
+[출력 형식 - 순수 JSON만]
+마크다운 없이 JSON만 반환하세요.
 {
-  "competency": "교과역량 및 영역",
-  "standard": "성취기준 및 재진술된 핵심 아이디어",
-  "question": "탐구질문",
-  "objective": "학습목표 및 주제",
+  "competency": "교과 역량 및 영역",
+  "standard": "성취기준 및 핵심 아이디어",
+  "question": "탐구 질문",
+  "objective": "학습 목표·학습 주제",
   "intent": "수업자 의도",
-  "feedback": "성취수준 및 피드백 방안",
-  "activities": "교수·학습 활동 (도입-전개-정리 단계별 교사/학생 활동)"
+  "feedback": "성취수준(상/중/하) 및 피드백 방안",
+  "activities": [
+    { "단계": "도입", "형태": "전체", "활동": "활동 요약", "시간": "3", "자료": "", "유의점": "", "평가": "", "교사": "구체적 발문·지도", "학생": "예상 반응·활동" },
+    { "단계": "전개", "형태": "모둠", "활동": "활동1", "시간": "10", "자료": "", "유의점": "", "평가": "", "교사": "구체적 지도", "학생": "구체적 활동" },
+    { "단계": "정리", "형태": "전체", "활동": "정리", "시간": "5", "자료": "", "유의점": "", "평가": "", "교사": "정리 발문", "학생": "정리 발표" }
+  ]
 }
 `;
 
@@ -53,13 +56,21 @@ JSON 형식으로 반환하세요:
         const response = await result.response;
         const text = response.text();
 
-        // JSON 파싱 (AI가 마크다운 블록을 포함할 수 있으므로 정제 필요)
         const jsonStr = text.replace(/```json/g, '').replace(/```/g, '').trim();
         const data = JSON.parse(jsonStr);
 
+        // activities가 문자열이면 배열로 변환 시도
+        if (data.activities && !Array.isArray(data.activities)) {
+            data.activities = [{ 단계: '전개', 형태: '전체', 활동: String(data.activities), 시간: '40', 자료: '', 유의점: '', 평가: '', 교사: '◉', 학생: '◦' }];
+        }
+
         res.status(200).json(data);
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ error: 'AI 생성 실패' });
+        console.error('AI generate error:', error);
+        const msg = error?.message || 'AI 생성 실패';
+        res.status(500).json({
+            error: 'AI 생성 실패',
+            details: msg,
+        });
     }
 }

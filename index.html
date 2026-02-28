@@ -75,9 +75,8 @@
                         <label for="unit">단원</label>
                         <div class="unit-row">
                             <select id="unit">
-                                <option value="">교과·학년 선택 → [단원 불러오기] 클릭 (또는 아래 직접 입력)</option>
+                                <option value="">교과·학년 선택 시 자동 로드 (또는 직접 입력)</option>
                             </select>
-                            <button type="button" id="load-units-btn" class="secondary-btn load-units-btn">단원 불러오기</button>
                         </div>
                         <input type="text" id="unit-fallback" class="unit-fallback hidden" placeholder="단원명 입력 (예: 3. 이야기를 꾸며요)">
                     </div>
@@ -87,23 +86,15 @@
                     </div>
                     <div class="input-group">
                         <label for="target">대상</label>
-                        <input type="text" id="target" placeholder="예: 5학년 0반">
-                    </div>
-                    <div class="input-group">
-                        <label for="classroom">학급</label>
-                        <input type="text" id="classroom" placeholder="예: 0반">
+                        <input type="text" id="target" placeholder="예: 4학년 2반">
                     </div>
                     <div class="input-group">
                         <label for="date">일시</label>
                         <input type="text" id="date" placeholder="예: 2026. 3. 15.(3교시)">
                     </div>
                     <div class="input-group">
-                        <label for="page">교과서 쪽수</label>
-                        <input type="text" id="page" placeholder="예: 23~26쪽">
-                    </div>
-                    <div class="input-group">
                         <label for="model">교수·학습 모형</label>
-                        <input type="text" id="model" placeholder="예: 개념 형성 모형">
+                        <input type="text" id="model" placeholder="교과 선택 시 추천">
                     </div>
                 </div>
                 <button id="generate-btn" class="primary-btn">과정안 생성 시작</button>

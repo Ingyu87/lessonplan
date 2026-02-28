@@ -22,9 +22,7 @@ const elements = {
         unitFallback: document.getElementById('unit-fallback'),
         lesson: document.getElementById('lesson'),
         target: document.getElementById('target'),
-        classroom: document.getElementById('classroom'),
         date: document.getElementById('date'),
-        page: document.getElementById('page'),
         model: document.getElementById('model'),
     },
     downloadBtn: document.getElementById('download-docx'),
@@ -39,10 +37,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     elements.inputs.grade?.addEventListener('change', fetchUnits);
     elements.inputs.subject?.addEventListener('change', fetchUnits);
-    document.getElementById('load-units-btn')?.addEventListener('click', () => fetchUnits());
-    // 페이지 로드 시 교과·학년이 선택되어 있으면 단원 목록 자동 로드
+    elements.inputs.subject?.addEventListener('change', fillModelRecommendation);
+    // 페이지 로드 시 교과·학년 선택 → 단원 자동 로드, 교수·학습 모형 추천
     setTimeout(() => {
         if (elements.inputs.subject?.value && elements.inputs.grade?.value) fetchUnits();
+        fillModelRecommendation();
     }, 300);
 
     elements.inputs.unit?.addEventListener('change', () => {
@@ -79,6 +78,30 @@ function getGradeBand(grade) {
     if (g <= 2) return '1~2학년';
     if (g <= 4) return '3~4학년';
     return '5~6학년';
+}
+
+/** 교과별 교수·학습 모형 추천 */
+const MODEL_BY_SUBJECT = {
+    국어: '문제 해결 학습 모형',
+    수학: '개념 형성 모형',
+    사회: '탐구 학습 모형',
+    과학: '탐구 학습 모형',
+    도덕: '가치澄清 학습 모형',
+    실과: '체험 학습 모형',
+    체육: '게임 모형',
+    음악: '음악 구성 요소 활용 학습 모형',
+    미술: '시각적 탐구 학습 모형',
+    영어: '과제 수행 학습 모형',
+};
+function fillModelRecommendation() {
+    const subject = elements.inputs.subject?.value;
+    const modelInput = elements.inputs.model;
+    if (!modelInput || !subject) return;
+    const recommended = MODEL_BY_SUBJECT[subject];
+    if (recommended) {
+        modelInput.placeholder = `추천: ${recommended}`;
+        modelInput.value = recommended;
+    }
 }
 
 function fillUnitSelect(units) {
@@ -327,9 +350,7 @@ function renderYakanFormat(data) {
     const feedback = toKoreanOnly(toDisplayText(data.feedback));
 
     const target = elements.inputs.target?.value || `${elements.inputs.grade?.value || ''}학년 0반`;
-    const classroom = elements.inputs.classroom?.value || '0반';
     const date = elements.inputs.date?.value || '';
-    const page = elements.inputs.page?.value || '';
     const model = elements.inputs.model?.value || '';
 
     const html = `
@@ -341,24 +362,22 @@ function renderYakanFormat(data) {
     <tr>
       <th>단원</th>
       <th>대상</th>
-      <th>학급</th>
       <th>일시</th>
     </tr>
     <tr>
       <td>${escapeHtml(unitVal)}</td>
       <td>${escapeHtml(target)}</td>
-      <td>${escapeHtml(classroom)}</td>
       <td>${escapeHtml(date)}</td>
     </tr>
   </table>
 
   <table class="yakan-table yakan-chasi">
     <tr>
-      <th>차시<br>(교과서 쪽수)</th>
+      <th>차시</th>
       <th>교수·학습 모형</th>
     </tr>
     <tr>
-      <td>${lessonVal}${totalLesson ? `/${totalLesson}` : ''}${page ? ` (${escapeHtml(page)})` : ''}</td>
+      <td>${lessonVal}${totalLesson ? `/${totalLesson}` : ''}</td>
       <td>${escapeHtml(model) || '지도서 각론 등에서 확인'}</td>
     </tr>
   </table>
@@ -416,9 +435,7 @@ function handleDownload() {
         : (elements.inputs.unit?.value || '');
     const lessonVal = elements.inputs.lesson?.value || '';
     const target = elements.inputs.target?.value || '';
-    const classroom = elements.inputs.classroom?.value || '';
     const date = elements.inputs.date?.value || '';
-    const page = elements.inputs.page?.value || '';
     const model = elements.inputs.model?.value || '';
 
     const Table = docx.Table;
@@ -438,19 +455,18 @@ function handleDownload() {
         children: [
             cell('단원'),
             cell('대상'),
-            cell('학급'),
             cell('일시'),
         ],
     });
     const headerDataRow = new TableRow({
-        children: [cell(unitVal), cell(target), cell(classroom), cell(date)],
+        children: [cell(unitVal), cell(target), cell(date)],
     });
 
     const chasiRow = new TableRow({
-        children: [cell('차시(교과서 쪽수)'), cell('교수·학습 모형')],
+        children: [cell('차시'), cell('교수·학습 모형')],
     });
     const chasiDataRow = new TableRow({
-        children: [cell(`${lessonVal}차시${page ? ` (${page})` : ''}`), cell(model || '지도서 각론 등에서 확인')],
+        children: [cell(`${lessonVal}차시`), cell(model || '지도서 각론 등에서 확인')],
     });
 
     const analysisRows = [

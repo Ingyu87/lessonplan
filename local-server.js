@@ -181,18 +181,18 @@ function loadReferenceMaterials(subject, grade, unitName, lesson) {
     const gradeBand = getGradeBand(grade);
     let context = '';
 
-    // 1. 연간지도 계획 - 주요 학습 내용 및 활동
+    // 1. 연간지도 계획 - 주요 학습 내용 및 활동 (학년 정확 일치 우선)
     const annualPlan = loadAnnualPlan();
-    const planEntry = annualPlan.find(p => p.교과 === subject && (p.학년 === grade || p.학년군 === gradeBand));
+    const gradeStr = String(grade);
+    let planEntry = annualPlan.find(p => p.교과 === subject && p.학년 === gradeStr);
+    if (!planEntry) planEntry = annualPlan.find(p => p.교과 === subject && p.학년군 === gradeBand);
     if (planEntry && planEntry.단원목록) {
         const unitInfo = planEntry.단원목록.find(u =>
             u.단원명 === unitName || String(u.단원번호) === String(unitName) || (u.단원명 && u.단원명.includes(unitName))
         );
         if (unitInfo) {
-            context += '\n[연간지도 계획 - 해당 단원]\n';
-            context += `- 단원명: ${unitInfo.단원명}\n`;
-            context += `- 차시수: ${unitInfo.차시수 || '-'}\n`;
             const lessonNum = parseInt(lesson, 10);
+            let chasiContent = '';
             if (unitInfo.차시별_주요_활동 && Array.isArray(unitInfo.차시별_주요_활동) && !isNaN(lessonNum)) {
                 const matches = unitInfo.차시별_주요_활동.filter((c) => {
                     const m = (c.차시 || '').match(/^(\d+)(?:~(\d+))?$/);
@@ -209,17 +209,21 @@ function loadReferenceMaterials(subject, grade, unitName, lesson) {
                     return end - start;
                 };
                 const best = matches.sort((a, b) => rangeOf(a) - rangeOf(b))[0];
-                if (best) {
-                    context += `- ${lesson}차시 주요 학습 내용 및 활동 (${best.구분 || ''}): ${best.내용 || ''}\n`;
-                }
+                if (best) chasiContent = best.내용 || '';
             }
+            context += '\n[★★★ 이 차시의 핵심 - 반드시 그대로 반영, 축약·변형·다른 내용 대체 금지 ★★★]\n';
+            context += `${lesson}차시 주요 학습 내용 및 활동: ${chasiContent || '(없음)'}\n`;
+            context += '\n[연간지도 계획 - 해당 단원]\n';
+            context += `- 단원명: ${unitInfo.단원명}\n`;
+            context += `- 차시수: ${unitInfo.차시수 || '-'}\n`;
+            if (chasiContent) context += `- ${lesson}차시 주요 학습 내용 및 활동: ${chasiContent}\n`;
             if (unitInfo.주요_학습_내용_및_활동) {
                 context += `- 단원 전체 주요 학습 내용 및 활동: ${unitInfo.주요_학습_내용_및_활동}\n`;
             }
         }
     }
 
-    // 2. 성취기준 (단원 있으면 해당 단원 우선, 해설 전체 반영)
+    // 2. 성취기준 - 차시별 주요활동과 매칭되는 것 우선 배치
     try {
         const standardsPath = path.join(baseDir, '2022개정교육과정 성취기준 및 해설.json');
         if (fs.existsSync(standardsPath)) {
@@ -232,15 +236,52 @@ function loadReferenceMaterials(subject, grade, unitName, lesson) {
                 ));
                 if (unitFiltered.length > 0) filtered = unitFiltered;
             }
-            filtered = filtered.slice(0, 18);
-            if (filtered.length > 0) {
-                context += '\n[성취기준 - 영역 포함]\n';
-                filtered.forEach(s => {
-                    const areaPart = s.영역 ? ` [영역: ${s.영역}]` : '';
-                    const unitPart = s.단원 ? ` [단원: ${s.단원}]` : '';
-                    context += `- ${s.성취기준}${areaPart}${unitPart}\n`;
-                    if (s['성취기준 해설']) context += `  해설: ${s['성취기준 해설']}\n`;
+            // 차시별 주요활동과 키워드 매칭: 해당 차시 내용과 직접 관련된 성취기준 우선
+            const chasiContent = (context.match(/차시 주요 학습 내용 및 활동: ([^\n]+)/)?.[1] || '').trim();
+            if (chasiContent && chasiContent !== '(없음)') {
+                const words = chasiContent.replace(/[을를이가에와과]\s*/g, ' ').split(/\s+/).filter(w => w.length >= 2);
+                const keywords = [...new Set([...words, ...(chasiContent.includes('인물') ? ['인물'] : []), ...(chasiContent.includes('이야기') ? ['이야기'] : []), ...(chasiContent.includes('흐름') ? ['흐름'] : []), ...(chasiContent.includes('관계') ? ['관계'] : [])])];
+                const scored = filtered.map(s => {
+                    const text = (s.성취기준 || '') + (s['성취기준 해설'] || '');
+                    const matchCount = keywords.filter(k => text.includes(k)).length;
+                    return { ...s, _score: matchCount };
                 });
+                const matched = scored.filter(s => s._score > 0).sort((a, b) => b._score - a._score).slice(0, 5);
+                const rest = scored.filter(s => s._score === 0).slice(0, 13);
+                if (matched.length > 0) {
+                    context += '\n[★★ 이 차시에 적합한 성취기준 - 반드시 이 중에서 선택 ★★]\n';
+                    matched.forEach(s => {
+                        const areaPart = s.영역 ? ` [영역: ${s.영역}]` : '';
+                        context += `- ${s.성취기준}${areaPart}\n`;
+                        if (s['성취기준 해설']) context += `  해설: ${s['성취기준 해설']}\n`;
+                    });
+                    context += '\n[기타 성취기준 참고]\n';
+                    rest.forEach(s => {
+                        const areaPart = s.영역 ? ` [영역: ${s.영역}]` : '';
+                        context += `- ${s.성취기준}${areaPart}\n`;
+                        if (s['성취기준 해설']) context += `  해설: ${s['성취기준 해설']}\n`;
+                    });
+                } else {
+                    filtered = filtered.slice(0, 18);
+                    context += '\n[성취기준 - 영역 포함]\n';
+                    filtered.forEach(s => {
+                        const areaPart = s.영역 ? ` [영역: ${s.영역}]` : '';
+                        const unitPart = s.단원 ? ` [단원: ${s.단원}]` : '';
+                        context += `- ${s.성취기준}${areaPart}${unitPart}\n`;
+                        if (s['성취기준 해설']) context += `  해설: ${s['성취기준 해설']}\n`;
+                    });
+                }
+            } else {
+                filtered = filtered.slice(0, 18);
+                if (filtered.length > 0) {
+                    context += '\n[성취기준 - 영역 포함]\n';
+                    filtered.forEach(s => {
+                        const areaPart = s.영역 ? ` [영역: ${s.영역}]` : '';
+                        const unitPart = s.단원 ? ` [단원: ${s.단원}]` : '';
+                        context += `- ${s.성취기준}${areaPart}${unitPart}\n`;
+                        if (s['성취기준 해설']) context += `  해설: ${s['성취기준 해설']}\n`;
+                    });
+                }
             }
         }
     } catch (e) {
@@ -377,12 +418,12 @@ app.post('/api/generate', async (req, res) => {
 아래 참고 자료를 모두 반영하여, **해당 차시에 맞는 상세하고 실질적으로 진행 가능한** 교수·학습 과정안(약안)을 작성하세요.
 
 [수업 설계 흐름 - 반드시 이 순서로 설계]
-1. **역량**을 기르기 위해 **성취기준·핵심아이디어**에 맞춰 **탐구질문**을 도출한다.
-2. 그 **탐구질문을 해결하기 위해** **수업목표(objective)**와 **학습 주제(topic)**를 설정한다.
-3. **수업·평가 주안점**을 두고 **수업의도(intent)**를 작성한다.
-4. 그 **의도에 맞게** **평가계획(evaluationPlan)**을 작성한다.
-5. **평가계획을 실행하기 위한 방안**으로 **40분 수업**이 진행된다. 도입·전개·정리로 구성.
-6. **차시별 주요활동**에 맞춰 **전개**에서 탐구질문·문제를 해결하기 위해 **3가지 활동**(실현이 어려우면 2가지)을 제시하고, **정리**에서 활동 마무리 활동을 제시한다.
+1. **[연간지도 계획]의 해당 차시 "주요 학습 내용 및 활동"**이 이 수업의 핵심이다. 이 내용을 **축약·변형하지 말고** 그대로 반영한다.
+2. 그 차시별 주요 활동과 **직접 관련된** 성취기준·핵심아이디어만 선택한다. 해당 차시와 무관한 내용(예: 다른 단원의 '관점', '다양한 관점' 등)은 넣지 않는다.
+3. 차시별 주요 활동을 해결하기 위한 **탐구질문**을 만든다.
+4. **수업목표(objective)·학습 주제(topic)**는 차시별 주요 활동 내용을 **그대로** 반영한다. 다른 내용으로 대체하지 않는다.
+5. **수업·평가 주안점**을 두고 **수업의도(intent)**를 작성하고, 그 **의도에 맞게** **평가계획(evaluationPlan)**을 작성한다.
+6. **평가계획 실행**을 위한 **40분 수업**(도입·전개·정리). **차시별 주요활동**에 맞춰 전개에서 **3가지 활동**(실현 어려우면 2가지), 정리에서 마무리 활동을 제시한다.
 
 [입력 정보]
 - 학년: ${grade}학년, 학기: ${semester}학기, 교과: ${subject}
@@ -390,10 +431,12 @@ app.post('/api/generate', async (req, res) => {
 - 차시: ${lesson}차시
 
 [필수 반영 사항]
-1. 위 [수업 설계 흐름]을 따라 설계하세요. 탐구질문 → 수업목표·주제 → 수업의도 → 평가계획 → 40분 수업(도입·전개·정리) 순서.
-2. **연간지도 계획** 해당 차시 "주요 학습 내용 및 활동"을 핵심으로, **성취기준·해설·핵심아이디어**를 반영하여 탐구질문·학습목표·수업자 의도를 구체적으로 작성하세요. 교수·학습 활동: **도입 1행, 전개 3행(활동1·활동2·활동3, 실현 어려우면 2행), 정리 1행** 총 5행(또는 4행)으로 작성하세요.
-3. **성취수준** 자료를 참고하여 평가 계획에 지식·이해, 과정·기능, 가치·태도 범주별로 상/중/하 수준을 구체적으로 진술하고, 각 수준에 대한 피드백 방안을 제시하세요.
-4. **핵심 아이디어**와 **성취기준 적용 시 고려사항**, **장학자료**를 반영하여 수업 설계와 유의점에 반영하세요.
+1. 위 [수업 설계 흐름]을 따라 설계하세요.
+2. **[이 차시의 핵심]** [연간지도 계획]에 제시된 "N차시 주요 학습 내용 및 활동"이 이 수업의 전부다. **목표·주제·탐구질문·교수학습활동** 모두 이 내용을 **축약·변형·대체하지 말고** 그대로 반영한다.
+3. **성취기준·핵심아이디어**는 해당 차시별 주요활동과 **직접 관련된 것만** 사용한다. 해당 차시와 무관한 내용(예: '관점', '다양한 관점'은 5~6학년 단원 내용)은 절대 넣지 않는다.
+4. 교수·학습 활동: **도입 1행, 전개 3행(활동1·활동2·활동3, 실현 어려우면 2행), 정리 1행** 총 5행(또는 4행)으로 작성하세요.
+5. **성취수준** 자료를 참고하여 평가 계획에 지식·이해, 과정·기능, 가치·태도 범주별로 상/중/하 수준을 구체적으로 진술하고, 각 수준에 대한 피드백 방안을 제시하세요.
+6. **핵심 아이디어**와 **성취기준 적용 시 고려사항**, **장학자료**를 반영하여 수업 설계와 유의점에 반영하세요.
 
 [작성 원칙 - 상세·실행 가능]
 - 수업안은 **상당히 상세하게** 작성하세요. 교사 열에는 **주요 활동**(자료 제시·지도 절차·설명 등)과 **발문**(질문 문장)을 모두 적으세요. 예: "○○○를 실물화상기로 제시한다." "선생님이 지금 무엇을 하고 있나요?"처럼 교사가 하는 구체적 활동을 먼저 쓰고, 그 다음 발문을 적습니다. 학생 열에는 예상 반응, 활동 내용, 산출물, 모둠별 역할 등을 구체적으로 적으세요.
@@ -402,9 +445,9 @@ app.post('/api/generate', async (req, res) => {
 - 모든 문장은 **한국어만** 사용하세요. 영어 레이블(competency, standard 등)은 사용하지 마세요.
 - competency: 해당 교과 역량. area: 위 [성취기준]에 나온 해당 차시·단원의 영역.
 - coreIdea(핵심 아이디어): [핵심 아이디어] 참고에 해당 영역이 있으면 그걸 기반으로, 해당 차시의 학습 맥락(단원·주요 학습 내용·탐구 질문)에 맞게 재진술. 영역 핵심 아이디어는 그대로 두되, 차시에 맞게 수정·적용 가능. 성취기준 코드([4국03-02] 등) 넣지 말 것.
-- standard(성취기준): 해당 차시 성취기준 코드+문장만. 핵심 아이디어 문장 넣지 말 것.
-- objective(학습 목표): "~할 수 있다" 형태의 학습 목표 한 문장만.
-- topic(학습 주제): 이 차시에서 다루는 구체적 주제·내용 (학습 목표와 구분하여 별도로).
+- standard(성취기준): [이 차시에 적합한 성취기준] 섹션에 제시된 것 중에서 **반드시** 선택. 해당 차시와 무관한 성취기준(예: 관점, 표현의도는 다른 차시) 사용 금지.
+- objective(학습 목표): [연간지도 계획] 해당 차시 "주요 학습 내용 및 활동" 내용을 **그대로** 반영. 축약·변형·다른 내용으로 대체 금지.
+- topic(학습 주제): 차시별 주요활동 내용을 **그대로** 반영. 해당 차시와 무관한 내용 넣지 말 것.
 - intent: 수업·평가 주안점을 두고 작성한 수업자의 의도. 이 의도에 맞게 평가계획을 설계한다.
 - evaluationPlan: intent(수업의도)에 맞게 평가 계획을 표 형태로 작성. 각 행은 범주(평가 방법), 평가 요소, 수준(상/중/하), 피드백을 포함. 성취수준 자료를 참고하여 지식·이해, 과정·기능, 가치·태도 등 범주별로 1~3행 작성.
 - model: 해당 차시·단원에 가장 적합한 교수·학습 모형 추천.

@@ -37,11 +37,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     elements.inputs.grade?.addEventListener('change', fetchUnits);
     elements.inputs.subject?.addEventListener('change', fetchUnits);
-    elements.inputs.subject?.addEventListener('change', fillModelRecommendation);
-    // 페이지 로드 시 교과·학년 선택 → 단원 자동 로드, 교수·학습 모형 추천
+    // 페이지 로드 시 교과·학년 선택 → 단원 자동 로드
     setTimeout(() => {
         if (elements.inputs.subject?.value && elements.inputs.grade?.value) fetchUnits();
-        fillModelRecommendation();
     }, 300);
 
     elements.inputs.unit?.addEventListener('change', () => {
@@ -80,29 +78,7 @@ function getGradeBand(grade) {
     return '5~6학년';
 }
 
-/** 교과별 교수·학습 모형 추천 */
-const MODEL_BY_SUBJECT = {
-    국어: '문제 해결 학습 모형',
-    수학: '개념 형성 모형',
-    사회: '탐구 학습 모형',
-    과학: '탐구 학습 모형',
-    도덕: '가치澄清 학습 모형',
-    실과: '체험 학습 모형',
-    체육: '게임 모형',
-    음악: '음악 구성 요소 활용 학습 모형',
-    미술: '시각적 탐구 학습 모형',
-    영어: '과제 수행 학습 모형',
-};
-function fillModelRecommendation() {
-    const subject = elements.inputs.subject?.value;
-    const modelInput = elements.inputs.model;
-    if (!modelInput || !subject) return;
-    const recommended = MODEL_BY_SUBJECT[subject];
-    if (recommended) {
-        modelInput.placeholder = `추천: ${recommended}`;
-        modelInput.value = recommended;
-    }
-}
+/** 교수·학습 모형은 AI가 차시별로 추천 (생성 완료 후 자동 입력) */
 
 function fillUnitSelect(units) {
     const sel = elements.inputs.unit;
@@ -234,6 +210,7 @@ async function handleGenerate() {
 
         const result = await response.json();
         lastGeneratedData = result;
+        if (result.model && elements.inputs.model) elements.inputs.model.value = result.model;
         renderYakanFormat(result);
 
         elements.resultSection.classList.remove('hidden');
@@ -351,7 +328,7 @@ function renderYakanFormat(data) {
 
     const target = elements.inputs.target?.value || `${elements.inputs.grade?.value || ''}학년 0반`;
     const date = elements.inputs.date?.value || '';
-    const model = elements.inputs.model?.value || '';
+    const model = (data.model || elements.inputs.model?.value || '').trim();
 
     const html = `
 <div class="yakan-document">
@@ -436,7 +413,7 @@ function handleDownload() {
     const lessonVal = elements.inputs.lesson?.value || '';
     const target = elements.inputs.target?.value || '';
     const date = elements.inputs.date?.value || '';
-    const model = elements.inputs.model?.value || '';
+    const model = (d.model || elements.inputs.model?.value || '').trim();
 
     const Table = docx.Table;
     const TableRow = docx.TableRow;

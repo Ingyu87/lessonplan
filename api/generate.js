@@ -17,11 +17,11 @@ export default async function handler(req, res) {
     }
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
     const systemPrompt = `
-당신은 2022 개정 교육과정에 정통한 "초등학교 수업 설계 전문가"입니다.
-2022 개정 교육과정 가이드라인을 준수하여 교수·학습 과정안(약안) 초안을 작성하세요.
+당신은 2022 개정 교육과정에 정통한 초등학교 수업 설계 전문가입니다.
+2022 개정 교육과정 가이드라인을 준수하여 교수학습 과정안(약안) 초안을 작성하세요.
 
 [입력 정보]
 - 학년: ${grade}학년, 학기: ${semester}학기, 교과: ${subject}
@@ -31,8 +31,9 @@ export default async function handler(req, res) {
 [작성 원칙]
 1. 모든 출력은 한국어로 작성.
 2. activities는 반드시 배열로 작성. 각 항목에 단계, 형태, 활동, 시간, 자료, 유의점, 평가, 교사, 학생 필드를 포함.
-3. 교사·학생 열에 구체적인 발문·지도 내용과 예상 반응·활동을 작성.
-4. 도입/전개/정리 단계별로 2~5개 행 작성.
+3. 교사학생 열에 구체적인 발문 지도 내용과 예상 반응 활동을 작성.
+4. 도입 전개 정리 단계별로 2~5개 행 작성.
+5. model: 해당 차시 단원에 가장 적합한 교수학습 모형을 추천하여 한 문장으로 작성.
 
 [출력 형식 - 순수 JSON만]
 마크다운 없이 JSON만 반환하세요.
@@ -40,9 +41,10 @@ export default async function handler(req, res) {
   "competency": "교과 역량 및 영역",
   "standard": "성취기준 및 핵심 아이디어",
   "question": "탐구 질문",
-  "objective": "학습 목표·학습 주제",
+  "objective": "학습 목표 학습 주제",
   "intent": "수업자 의도",
-  "feedback": "성취수준(상/중/하) 및 피드백 방안",
+  "feedback": "성취수준 상중하 및 피드백 방안",
+  "model": "해당 차시에 맞는 교수학습 모형",
   "activities": [
     { "단계": "도입", "형태": "전체", "활동": "활동 요약", "시간": "3", "자료": "", "유의점": "", "평가": "", "교사": "구체적 발문·지도", "학생": "예상 반응·활동" },
     { "단계": "전개", "형태": "모둠", "활동": "활동1", "시간": "10", "자료": "", "유의점": "", "평가": "", "교사": "구체적 지도", "학생": "구체적 활동" },

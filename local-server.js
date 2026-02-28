@@ -271,11 +271,16 @@ app.post('/api/generate', async (req, res) => {
     }
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    const modelId = "gemini-2.0-flash";
+    const modelId = "gemini-1.5-flash";
     const model = genAI.getGenerativeModel({ model: modelId });
 
-    const resolvedUnitName = unitName || (unit ? `${unit}단원` : '');
+    const resolvedUnitName = String(unitName || unit || '').replace(/[\u201c\u201d\u2018\u2019\u2026]/g, '');
     const refContext = loadReferenceMaterials(subject || '국어', grade || '3', resolvedUnitName, lesson);
+    const refContextClean = refContext.replace(/[\u201c\u201d\u2018\u2019\u2026]/g, (m) => {
+        if (m === '\u2026') return '...';
+        if (m === '\u2018' || m === '\u2019') return "'";
+        return '"';
+    });
     console.log('참고 자료 로드 완료, 길이:', refContext.length);
 
     const systemPrompt = `
@@ -299,6 +304,7 @@ app.post('/api/generate', async (req, res) => {
 - 도입/전개/정리 단계별로 **여러 행**을 두세요. 전개 단계는 해당 차시의 주요 학습 내용을 세부 활동으로 나누어 2~5개 행으로 작성하세요(예: 활동1 탐구 질문 제시, 활동2 모둠 탐구, 활동3 발표·정리 등).
 - 모든 문장은 **한국어만** 사용하세요. 영어 레이블(competency, standard 등)은 사용하지 마세요.
 - competency: 해당 교과 역량 및 영역을 한글로. standard: 성취기준 문장 및 핵심 아이디어 반영. question: 탐구 질문 한 문장. objective: 학습 목표·학습 주제. intent: 수업자의 의도(수업·평가 주안점). feedback: 성취수준 상/중/하 진술 및 피드백 방안.
+- model: 해당 차시·단원에 가장 적합한 교수·학습 모형을 추천하여 한 문장으로 작성 (예: 개념 형성 모형, 문제 해결 학습 모형, 탐구 학습 모형 등).
 
 [출력 형식 - 순수 JSON만]
 마크다운 코드블록 없이 JSON만 반환하세요.
@@ -309,6 +315,7 @@ app.post('/api/generate', async (req, res) => {
   "objective": "학습 목표·학습 주제",
   "intent": "수업자 의도(수업·평가 주안점)",
   "feedback": "성취수준(상/중/하) 및 피드백 방안",
+  "model": "해당 차시에 맞는 교수·학습 모형",
   "activities": [
     { "단계": "도입", "형태": "전체", "활동": "활동 요약", "시간": "3", "자료": "자료명", "유의점": "유의사항", "평가": "", "교사": "구체적인 발문·설명·지도 내용", "학생": "예상 반응·활동 내용" },
     { "단계": "전개", "형태": "모둠", "활동": "활동1 요약", "시간": "10", "자료": "", "유의점": "", "평가": "관찰 등", "교사": "구체적 발문 및 지도", "학생": "구체적 활동 및 산출" },
@@ -319,7 +326,7 @@ app.post('/api/generate', async (req, res) => {
 activities의 교사·학생 필드에는 한두 문장이 아닌, 실제 수업에서 쓸 수 있을 정도로 구체적으로 작성하세요.
 
 [참고 자료 - 반드시 반영]
-${refContext}
+${refContextClean}
 `;
 
     try {

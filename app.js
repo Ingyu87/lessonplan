@@ -9,6 +9,7 @@ const API_BASE = (typeof window !== 'undefined' && (window.location.protocol ===
 
 let lastGeneratedData = null;
 let unitList = [];
+let unitsFetchController = null;
 
 const elements = {
     generateBtn: document.getElementById('generate-btn'),
@@ -146,24 +147,32 @@ async function fetchUnits() {
         return;
     }
 
+    if (unitsFetchController) unitsFetchController.abort();
+    unitsFetchController = new AbortController();
+    const signal = unitsFetchController.signal;
+
     const sel = elements.inputs.unit;
     sel.innerHTML = '<option value="">단원 불러오는 중...</option>';
 
+    const applyUnits = (units) => {
+        if (elements.inputs.subject?.value !== subject || elements.inputs.grade?.value !== grade) return;
+        fillUnitSelect(units);
+        if (units.length > 0) showToast(`단원 ${units.length}개 불러왔습니다.`);
+    };
+
     try {
         const url = `${API_BASE}/api/units?subject=${encodeURIComponent(subject)}&grade=${encodeURIComponent(grade)}`;
-        const res = await fetch(url);
+        const res = await fetch(url, { signal });
+        if (elements.inputs.subject?.value !== subject || elements.inputs.grade?.value !== grade) return;
         if (res.ok) {
             const data = await res.json();
             const units = Array.isArray(data.units) ? data.units : [];
-            fillUnitSelect(units);
-            if (units.length > 0) showToast(`단원 ${units.length}개 불러왔습니다.`);
+            applyUnits(units);
             return;
         }
-        // API 실패 시 연간지도 JSON 직접 요청으로 재시도
         const units = await fetchUnitsFromPlanJson(subject, grade);
         if (units && units.length > 0) {
-            fillUnitSelect(units);
-            showToast(`단원 ${units.length}개 불러왔습니다.`);
+            applyUnits(units);
             return;
         }
         let msg = '단원 목록을 불러올 수 없습니다.';
@@ -174,11 +183,12 @@ async function fetchUnits() {
         setUnitSelectEmpty(msg);
         showToast('서버에 연결되지 않았습니다. 주소창에 http://localhost:3000 을 입력한 뒤 새로고침하고 [단원 불러오기]를 다시 클릭해보세요.');
     } catch (e) {
+        if (e.name === 'AbortError') return;
         console.warn('단원 목록 조회 실패:', e);
+        if (elements.inputs.subject?.value !== subject || elements.inputs.grade?.value !== grade) return;
         const units = await fetchUnitsFromPlanJson(subject, grade);
         if (units && units.length > 0) {
-            fillUnitSelect(units);
-            showToast(`단원 ${units.length}개 불러왔습니다.`);
+            applyUnits(units);
             return;
         }
         setUnitSelectEmpty('서버 연결 실패');

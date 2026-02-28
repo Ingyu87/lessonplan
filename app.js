@@ -113,7 +113,7 @@ function fillUnitSelect(units) {
         unitList.forEach(u => {
             const opt = document.createElement('option');
             opt.value = u.단원명 || u.단원;
-            opt.textContent = `${u.단원번호 != null ? u.단원번호 + '. ' : ''}${u.단원명 || u.단원}${u.차시수 ? ` (${u.차시수}차시)` : ''}`;
+            opt.textContent = `${u.단원명 || u.단원}${u.차시수 ? ` (${u.차시수}차시)` : ''}`;
             sel.appendChild(opt);
         });
         const directOpt = document.createElement('option');

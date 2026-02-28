@@ -400,15 +400,35 @@ input::placeholder {
     font-size: 0.8rem;
 }
 
+/* 교수·학습 활동: 교사·학생 넓게, 시간 좁게, 자료·유의점·평가 적당히 */
+.yakan-table.yakan-activities th:nth-child(1),
+.yakan-table.yakan-activities td:nth-child(1) {
+    width: 4.5em;
+    min-width: 4em;
+}
+.yakan-table.yakan-activities th:nth-child(2),
+.yakan-table.yakan-activities td:nth-child(2) {
+    width: 4em;
+    min-width: 3.5em;
+}
 .yakan-table.yakan-activities th:nth-child(3),
 .yakan-table.yakan-activities td:nth-child(3) {
-    min-width: 100px;
+    min-width: 140px;
 }
 .yakan-table.yakan-activities th:nth-child(4),
-.yakan-table.yakan-activities td:nth-child(4),
+.yakan-table.yakan-activities td:nth-child(4) {
+    min-width: 120px;
+}
 .yakan-table.yakan-activities th:nth-child(5),
 .yakan-table.yakan-activities td:nth-child(5) {
-    min-width: 140px;
+    width: 3.2em;
+    min-width: 2.8em;
+    max-width: 3.5em;
+    text-align: center;
+}
+.yakan-table.yakan-activities th:nth-child(6),
+.yakan-table.yakan-activities td:nth-child(6) {
+    min-width: 100px;
 }
 
 .yakan-table.yakan-eval {

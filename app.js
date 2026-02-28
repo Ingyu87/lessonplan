@@ -262,28 +262,33 @@ function escapeHtml(s) {
     return div.innerHTML;
 }
 
-/** 교수·학습 활동 행 렌더링 (2번째 형태: 교사/학생 별도 열) */
+/** 교수·학습 활동 행 렌더링 (수학과 예시 형식: 교사|학생|시간|자료·유의점·평가) */
 function renderActivitiesRows(activities) {
     if (Array.isArray(activities) && activities.length > 0) {
         return activities.map((a) => {
             const 교사 = toKoreanOnly(toDisplayText(a.교사 || ''));
             const 학생 = toKoreanOnly(toDisplayText(a.학생 || ''));
-            const 활동 = toKoreanOnly(toDisplayText(a.활동 || ''));
             const 형태 = toDisplayText(a.형태 || '');
             const 시간 = toDisplayText(a.시간 || '');
             const 자료 = toDisplayText(a.자료 || '');
             const 유의점 = toDisplayText(a.유의점 || '');
             const 평가 = toDisplayText(a.평가 || '');
+            const 활동 = toKoreanOnly(toDisplayText(a.활동 || ''));
+            const 자료유의점평가 = [
+                자료 ? `자료(◎) ${escapeHtml(자료).replace(/\n/g, '<br>')}` : '',
+                유의점 ? `유의점(유) ${escapeHtml(유의점).replace(/\n/g, '<br>')}` : '',
+                평가 ? `평가(㉞) ${escapeHtml(평가).replace(/\n/g, '<br>')}` : ''
+            ].filter(Boolean).join('<br><br>');
+            const 교사Escaped = escapeHtml(교사 || '◉').replace(/\n/g, '<br>');
+            const 활동Escaped = escapeHtml(활동).replace(/\n/g, '<br>');
+            const 교사내용 = 활동 ? `${활동Escaped}<br><br>${교사Escaped}` : 교사Escaped;
             return `<tr>
         <td>${escapeHtml(a.단계 || '')}</td>
         <td>${escapeHtml(형태)}</td>
-        <td>${escapeHtml(활동).replace(/\n/g, '<br>')}</td>
-        <td>${escapeHtml(교사).replace(/\n/g, '<br>') || '◉'}</td>
+        <td>${교사내용}</td>
         <td>${escapeHtml(학생).replace(/\n/g, '<br>') || '◦'}</td>
         <td>${escapeHtml(시간)}</td>
-        <td>${escapeHtml(자료).replace(/\n/g, '<br>')}</td>
-        <td>${escapeHtml(유의점).replace(/\n/g, '<br>')}</td>
-        <td>${escapeHtml(평가)}</td>
+        <td>${자료유의점평가}</td>
       </tr>`;
         }).join('');
     }
@@ -291,11 +296,8 @@ function renderActivitiesRows(activities) {
     return `<tr>
       <td>도입/전개/정리</td>
       <td></td>
-      <td>${escapeHtml(activitiesText).replace(/\n/g, '<br>') || '-'}</td>
-      <td>◉</td>
+      <td>${escapeHtml(activitiesText).replace(/\n/g, '<br>') || '◉'}</td>
       <td>◦</td>
-      <td></td>
-      <td></td>
       <td></td>
       <td></td>
     </tr>`;
@@ -413,18 +415,12 @@ function renderYakanFormat(data) {
   <table class="yakan-table yakan-activities">
     <thead>
       <tr>
-        <th rowspan="2">학습<br>단계</th>
-        <th rowspan="2">학습형태</th>
-        <th colspan="3">교수·학습 활동</th>
-        <th rowspan="2">시간<br>(분)</th>
-        <th rowspan="2">자료(㉶)</th>
-        <th rowspan="2">유의점(◯유)</th>
-        <th rowspan="2">평가(◯평)</th>
-      </tr>
-      <tr>
-        <th>활동</th>
+        <th>학습<br>단계</th>
+        <th>학습형태</th>
         <th>교사</th>
         <th>학생</th>
+        <th>시간<br>(분)</th>
+        <th>자료(◎) 유의점(유) 평가(㉞)</th>
       </tr>
     </thead>
     <tbody>

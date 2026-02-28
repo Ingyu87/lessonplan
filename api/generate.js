@@ -1,6 +1,48 @@
 // Vercel Serverless Function: api/generate.js (REST API 사용 - ByteString 오류 회피)
 
+import path from 'path';
+import fs from 'fs';
+
 export const config = { api: { bodyParser: true } };
+
+function getCoreIdeaFromFile(subject, area) {
+    try {
+        const corePath = path.join(process.cwd(), '핵심아이디어.txt');
+        if (!fs.existsSync(corePath)) return '';
+        const core = JSON.parse(fs.readFileSync(corePath, 'utf8'));
+        const norm = (s) => (s || '').replace(/[·⋅]/g, '·').trim();
+        const areaNorm = norm(area);
+        const found = core.find(c => c.교과 === subject && c.영역 && (
+            norm(c.영역) === areaNorm || norm(c.영역).includes(areaNorm) || areaNorm.includes(norm(c.영역))
+        ));
+        return found ? (found['핵심 아이디어'] || '') : '';
+    } catch (e) { return ''; }
+}
+
+async function generateCoreIdeaByAI(apiKey, subject, area, unitName) {
+    if (!apiKey) return '';
+    try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`;
+        const prompt = `${subject} 교과 ${area || '해당'} 영역의 핵심 아이디어를 2022 개정 교육과정 스타일로 한 문단(2~4문장)으로 작성하세요. 성취기준 코드([4국03-02] 등)는 넣지 말고, 해당 영역의 핵심 개념만 진술하세요.${unitName ? ` (단원: ${unitName})` : ''}`;
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json; charset=utf-8',
+                'x-goog-api-key': apiKey
+            },
+            body: JSON.stringify({
+                contents: [{ role: 'user', parts: [{ text: prompt }] }],
+                generationConfig: { maxOutputTokens: 300 }
+            })
+        });
+        if (!res.ok) return '';
+        const data = await res.json();
+        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        return text.trim();
+    } catch (e) {
+        return '';
+    }
+}
 
 export default async function handler(req, res) {
     if (req.method !== 'POST') {
@@ -35,13 +77,15 @@ export default async function handler(req, res) {
 [출력 형식 - 순수 JSON만]
 마크다운 없이 JSON만 반환하세요.
 - area: 해당 교과 교육과정의 영역 (예: 듣기·말하기, 읽기, 문학, 매체).
+- coreIdea: 영역 핵심 아이디어를 기반으로 해당 차시(단원·학습 내용)에 맞게 재진술. 성취기준 코드 넣지 말 것.
 - objective: 학습 목표 한 문장 ("~할 수 있다" 형태).
 - topic: 학습 주제 (학습 목표와 구분하여 별도).
 - evaluationPlan: 평가 계획 표. 범주(평가방법), 평가요소, 수준(상/중/하), 피드백 포함. 1~3행.
 {
   "competency": "교과 역량",
   "area": "해당 교과 영역",
-  "standard": "성취기준 및 핵심 아이디어",
+  "coreIdea": "핵심 아이디어 (영역 핵심 아이디어를 기반으로 해당 차시에 맞게 재진술)",
+  "standard": "성취기준만 ([4국03-02] 형태. 핵심 아이디어 넣지 말 것)",
   "question": "탐구 질문",
   "objective": "학습 목표 한 문장",
   "topic": "학습 주제",
@@ -83,6 +127,15 @@ export default async function handler(req, res) {
 
         const jsonStr = text.replace(/```json/g, '').replace(/```/g, '').trim();
         const data = JSON.parse(jsonStr);
+
+        if (!data.coreIdea || String(data.coreIdea).trim() === '') {
+            const coreIdea = getCoreIdeaFromFile(subject || '국어', data.area);
+            if (coreIdea) {
+                data.coreIdea = coreIdea;
+            } else {
+                data.coreIdea = await generateCoreIdeaByAI(apiKey, subject || '국어', data.area, resolvedUnit);
+            }
+        }
 
         if (data.activities && !Array.isArray(data.activities)) {
             data.activities = [{ 단계: '전개', 형태: '전체', 활동: String(data.activities), 시간: '40', 자료: '', 유의점: '', 평가: '', 교사: '◉', 학생: '◦' }];

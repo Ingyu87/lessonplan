@@ -25,6 +25,45 @@ function getGradeBand(grade) {
     return '5~6학년';
 }
 
+/** AI로 핵심 아이디어 생성 (파일에 없을 때 폴백) */
+async function generateCoreIdeaByAI(apiKey, subject, area, unitName) {
+    if (!apiKey) return '';
+    try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+        const prompt = `${subject} 교과 ${area || '해당'} 영역의 핵심 아이디어를 2022 개정 교육과정 스타일로 한 문단(2~4문장)으로 작성하세요. 영역의 핵심 개념만 진술하고, 성취기준 코드([4국03-02] 등)는 넣지 마세요.${unitName ? ` (단원: ${unitName})` : ''}`;
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json; charset=utf-8' },
+            body: JSON.stringify({
+                contents: [{ role: 'user', parts: [{ text: prompt }] }],
+                generationConfig: { maxOutputTokens: 300 }
+            })
+        });
+        if (!res.ok) return '';
+        const data = await res.json();
+        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        return text.trim();
+    } catch (e) {
+        console.warn('AI 핵심아이디어 생성 실패:', e.message);
+        return '';
+    }
+}
+
+/** 핵심아이디어.txt에서 해당 교과·영역의 핵심 아이디어 추출 */
+function getCoreIdeaFromFile(subject, area) {
+    try {
+        const corePath = path.join(baseDir, '핵심아이디어.txt');
+        if (!fs.existsSync(corePath)) return '';
+        const core = JSON.parse(fs.readFileSync(corePath, 'utf8'));
+        const norm = (s) => (s || '').replace(/[·⋅]/g, '·').trim();
+        const areaNorm = norm(area);
+        const found = core.find(c => c.교과 === subject && c.영역 && (
+            norm(c.영역) === areaNorm || norm(c.영역).includes(areaNorm) || areaNorm.includes(norm(c.영역))
+        ));
+        return found ? (found['핵심 아이디어'] || '') : '';
+    } catch (e) { return ''; }
+}
+
 /** 성취기준에서 해당 단원·차시의 영역 추출 (AI가 area를 비워둘 때 폴백) */
 function getAreaFromStandards(subject, gradeBand, unitName) {
     try {
@@ -293,7 +332,7 @@ app.post('/api/plan', (req, res) => {
 
 app.post('/api/generate', async (req, res) => {
     const { grade, semester, subject, unit, lesson, unitName } = req.body;
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = (process.env.GEMINI_API_KEY || '').trim();
 
     if (!apiKey) {
         return res.status(500).json({ error: 'API Key not configured in .env file' });
@@ -329,7 +368,9 @@ app.post('/api/generate', async (req, res) => {
 - **실제 수업에서 그대로 진행할 수 있는** 수준으로 작성하세요. 추상적 요약이 아니라 "교사가 할 말·할 일", "학생이 할 말·할 일"이 드러나도록 하세요.
 - 도입/전개/정리 단계별로 **여러 행**을 두세요. 전개 단계는 해당 차시의 주요 학습 내용을 세부 활동으로 나누어 2~5개 행으로 작성하세요(예: 활동1 탐구 질문 제시, 활동2 모둠 탐구, 활동3 발표·정리 등).
 - 모든 문장은 **한국어만** 사용하세요. 영어 레이블(competency, standard 등)은 사용하지 마세요.
-- competency: 해당 교과 역량. area(영역): 위 [성취기준]에 나온 해당 차시·단원의 영역을 그대로 기재 (예: 듣기·말하기, 읽기, 문학, 매체, 독서 등).
+- competency: 해당 교과 역량. area: 위 [성취기준]에 나온 해당 차시·단원의 영역.
+- coreIdea(핵심 아이디어): [핵심 아이디어] 참고에 해당 영역이 있으면 그걸 기반으로, 해당 차시의 학습 맥락(단원·주요 학습 내용·탐구 질문)에 맞게 재진술. 영역 핵심 아이디어는 그대로 두되, 차시에 맞게 수정·적용 가능. 성취기준 코드([4국03-02] 등) 넣지 말 것.
+- standard(성취기준): 해당 차시 성취기준 코드+문장만. 핵심 아이디어 문장 넣지 말 것.
 - objective(학습 목표): "~할 수 있다" 형태의 학습 목표 한 문장만.
 - topic(학습 주제): 이 차시에서 다루는 구체적 주제·내용 (학습 목표와 구분하여 별도로).
 - intent: 수업자의 의도(수업·평가 주안점).
@@ -341,7 +382,8 @@ app.post('/api/generate', async (req, res) => {
 {
   "competency": "교과 역량",
   "area": "해당 교과 교육과정의 영역 (예: 듣기·말하기, 읽기, 문학, 매체)",
-  "standard": "성취기준 및 핵심 아이디어",
+  "coreIdea": "핵심 아이디어 (영역 핵심 아이디어를 기반으로 해당 차시에 맞게 재진술)",
+  "standard": "성취기준만 ([4국03-02] 형태 코드+문장. 핵심 아이디어 문장 넣지 말 것)",
   "question": "탐구 질문",
   "objective": "학습 목표 한 문장",
   "topic": "학습 주제",
@@ -392,6 +434,14 @@ ${refContextClean}
                 const gradeBand = getGradeBand(grade || '3');
                 const area = getAreaFromStandards(subject || '국어', gradeBand, resolvedUnitName);
                 if (area) data.area = area;
+            }
+            if (!data.coreIdea || String(data.coreIdea).trim() === '') {
+                const baseCoreIdea = getCoreIdeaFromFile(subject || '국어', data.area);
+                if (baseCoreIdea) {
+                    data.coreIdea = baseCoreIdea;
+                } else {
+                    data.coreIdea = await generateCoreIdeaByAI(apiKey, subject || '국어', data.area, resolvedUnitName);
+                }
             }
             res.status(200).json(data);
         } catch (parseError) {

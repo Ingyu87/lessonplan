@@ -352,6 +352,7 @@ function renderYakanFormat(data) {
 
     const competency = toKoreanOnly(toDisplayText(data.competency));
     const area = toKoreanOnly(toDisplayText(data.area));
+    const coreIdea = toKoreanOnly(toDisplayText(data.coreIdea));
     const standard = toKoreanOnly(toDisplayText(data.standard));
     const question = toKoreanOnly(toDisplayText(data.question));
     const objective = toKoreanOnly(toDisplayText(data.objective));
@@ -396,7 +397,7 @@ function renderYakanFormat(data) {
   <table class="yakan-table yakan-analysis">
     <tr><th>교과 역량</th><td>${escapeHtml(competency).replace(/\n/g, '<br>') || '-'}</td></tr>
     <tr><th>영역</th><td>${escapeHtml(area || '해당 교과 교육과정에서 기재')}</td></tr>
-    <tr><th>핵심 아이디어</th><td>${escapeHtml(standard).replace(/\n/g, '<br>').substring(0, 300) || '-'}</td></tr>
+    <tr><th>핵심 아이디어</th><td>${escapeHtml(coreIdea).replace(/\n/g, '<br>') || '-'}</td></tr>
     <tr><th>성취기준</th><td>${escapeHtml(standard).replace(/\n/g, '<br>') || '-'}</td></tr>
     <tr><th>탐구 질문</th><td>${escapeHtml(question).replace(/\n/g, '<br>') || '-'}</td></tr>
   </table>
@@ -412,13 +413,16 @@ function renderYakanFormat(data) {
   <table class="yakan-table yakan-activities">
     <thead>
       <tr>
-        <th>학습<br>단계</th>
-        <th>학습형태</th>
-        <th>교수·학습 활동</th>
-        <th>시간<br>(분)</th>
-        <th>자료(㉶)</th>
-        <th>유의점(◯유)</th>
-        <th>평가(◯평)</th>
+        <th rowspan="2">학습<br>단계</th>
+        <th rowspan="2">학습형태</th>
+        <th colspan="3">교수·학습 활동</th>
+        <th rowspan="2">시간<br>(분)</th>
+        <th rowspan="2">자료(㉶)</th>
+        <th rowspan="2">유의점(◯유)</th>
+        <th rowspan="2">평가(◯평)</th>
+      </tr>
+      <tr>
+        <th>활동</th>
         <th>교사</th>
         <th>학생</th>
       </tr>
@@ -482,6 +486,7 @@ function handleDownload() {
     const analysisRows = [
         new TableRow({ children: [cell('교과 역량'), cell(toKoreanOnly(toDisplayText(d.competency)))] }),
         new TableRow({ children: [cell('영역'), cell(toKoreanOnly(toDisplayText(d.area)) || '해당 교과 교육과정에서 기재')] }),
+        new TableRow({ children: [cell('핵심 아이디어'), cell(toKoreanOnly(toDisplayText(d.coreIdea)))] }),
         new TableRow({ children: [cell('성취기준'), cell(toKoreanOnly(toDisplayText(d.standard)))] }),
         new TableRow({ children: [cell('탐구 질문'), cell(toKoreanOnly(toDisplayText(d.question)))] }),
     ];

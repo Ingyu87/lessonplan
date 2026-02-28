@@ -5,6 +5,99 @@ import fs from 'fs';
 
 export const config = { api: { bodyParser: true } };
 
+function getChasiActivity(grade, subject, unitName, lesson) {
+    try {
+        const planPath = path.join(process.cwd(), '연간지도_계획.json');
+        if (!fs.existsSync(planPath)) return '';
+        const annualPlan = JSON.parse(fs.readFileSync(planPath, 'utf8'));
+        const gradeStr = String(grade);
+        const g = parseInt(grade, 10);
+        const gradeBand = g <= 2 ? '1~2학년' : g <= 4 ? '3~4학년' : '5~6학년';
+        let planEntry = annualPlan.find(p => p.교과 === subject && p.학년 === gradeStr);
+        if (!planEntry) planEntry = annualPlan.find(p => p.교과 === subject && p.학년군 === gradeBand);
+        if (!planEntry?.단원목록) return '';
+        const unitInfo = planEntry.단원목록.find(u =>
+            u.단원명 === unitName || String(u.단원번호) === String(unitName) || (u.단원명 && u.단원명.includes(unitName))
+        );
+        if (!unitInfo?.차시별_주요_활동 || !Array.isArray(unitInfo.차시별_주요_활동)) return '';
+        const lessonNum = parseInt(lesson, 10);
+        if (isNaN(lessonNum)) return '';
+        const matches = unitInfo.차시별_주요_활동.filter((c) => {
+            const m = (c.차시 || '').match(/^(\d+)(?:~(\d+))?$/);
+            if (!m) return false;
+            const start = parseInt(m[1], 10);
+            const end = m[2] ? parseInt(m[2], 10) : start;
+            return lessonNum >= start && lessonNum <= end;
+        });
+        const rangeOf = (c) => {
+            const m = (c.차시 || '').match(/^(\d+)(?:~(\d+))?$/);
+            if (!m) return 999;
+            const start = parseInt(m[1], 10);
+            const end = m[2] ? parseInt(m[2], 10) : start;
+            return end - start;
+        };
+        const best = matches.sort((a, b) => rangeOf(a) - rangeOf(b))[0];
+        return best ? (best.내용 || '') : '';
+    } catch (e) {
+        return '';
+    }
+}
+
+function getStandardsBlock(grade, subject, unitName, chasiContent) {
+    try {
+        const standardsPath = path.join(process.cwd(), '2022개정교육과정 성취기준 및 해설.json');
+        if (!fs.existsSync(standardsPath)) return { block: '', fallback: '' };
+        const standards = JSON.parse(fs.readFileSync(standardsPath, 'utf8'));
+        const g = parseInt(grade, 10);
+        const gradeBand = g <= 2 ? '1~2학년' : g <= 4 ? '3~4학년' : '5~6학년';
+        let filtered = standards.filter(s => s.교과 === subject && s.학년 === gradeBand);
+        if (unitName && unitName.length >= 2) {
+            const u = String(unitName).trim();
+            const unitFiltered = filtered.filter(s => s.단원 && (
+                s.단원.includes(u) || u.includes(s.단원) || s.단원 === u || s.단원.indexOf(u) !== -1
+            ));
+            if (unitFiltered.length > 0) filtered = unitFiltered;
+        }
+        let matched = [];
+        let rest = [];
+        if (chasiContent && chasiContent.length >= 2) {
+            const words = chasiContent.replace(/[을를이가에와과]\s*/g, ' ').split(/\s+/).filter(w => w.length >= 2);
+            const keywords = [...new Set([...words, ...(chasiContent.includes('인물') ? ['인물'] : []), ...(chasiContent.includes('이야기') ? ['이야기'] : []), ...(chasiContent.includes('흐름') ? ['흐름'] : []), ...(chasiContent.includes('관계') ? ['관계'] : [])])];
+            const scored = filtered.map(s => {
+                const text = (s.성취기준 || '') + (s['성취기준 해설'] || '');
+                const matchCount = keywords.filter(k => text.includes(k)).length;
+                return { ...s, _score: matchCount };
+            });
+            matched = scored.filter(s => s._score > 0).sort((a, b) => b._score - a._score).slice(0, 5);
+            rest = scored.filter(s => s._score === 0).slice(0, 13);
+        } else {
+            matched = [];
+            rest = filtered.slice(0, 18);
+        }
+        const fallback = (matched[0] || rest[0])?.성취기준 || '';
+        let block = '\n[성취기준 - 반드시 이 중에서 선택하여 standard 필드에 넣을 것]\n';
+        if (matched.length > 0) {
+            block += '[★★ 이 차시에 적합한 성취기준 - 우선 선택 ★★]\n';
+            matched.forEach(s => {
+                block += `- ${s.성취기준}${s.영역 ? ` [영역: ${s.영역}]` : ''}\n`;
+                if (s['성취기준 해설']) block += `  해설: ${s['성취기준 해설']}\n`;
+            });
+            block += '\n[기타 성취기준 참고]\n';
+            rest.forEach(s => {
+                block += `- ${s.성취기준}${s.영역 ? ` [영역: ${s.영역}]` : ''}\n`;
+            });
+        } else {
+            rest.forEach(s => {
+                block += `- ${s.성취기준}${s.영역 ? ` [영역: ${s.영역}]` : ''}${s.단원 ? ` [단원: ${s.단원}]` : ''}\n`;
+                if (s['성취기준 해설']) block += `  해설: ${s['성취기준 해설']}\n`;
+            });
+        }
+        return { block, fallback };
+    } catch (e) {
+        return { block: '', fallback: '' };
+    }
+}
+
 function getCoreIdeaFromFile(subject, area) {
     try {
         const corePath = path.join(process.cwd(), '핵심아이디어.txt');
@@ -50,12 +143,19 @@ export default async function handler(req, res) {
     }
 
     const { grade, semester, subject, unit, lesson, unitName } = req.body || {};
-    const resolvedUnit = unitName || unit || '';
+    const resolvedUnit = (unitName || unit || '').replace(/[\u201c\u201d\u2018\u2019\u2026]/g, '');
     const apiKey = (process.env.GEMINI_API_KEY || '').trim();
 
     if (!apiKey) {
         return res.status(500).json({ error: 'API Key not configured', details: 'Vercel 환경 변수에 GEMINI_API_KEY를 설정하세요.' });
     }
+
+    const chasiContent = getChasiActivity(grade, subject || '국어', resolvedUnit, lesson);
+    const chasiBlock = chasiContent
+        ? `\n[★★★ 이 차시의 핵심 - 반드시 그대로 반영, 축약·변형·다른 내용 대체 금지 ★★★]\n${lesson}차시 주요 학습 내용 및 활동: ${chasiContent}\n`
+        : '';
+
+    const { block: standardsBlock, fallback: standardsFallback } = getStandardsBlock(grade, subject || '국어', resolvedUnit, chasiContent);
 
     const modelId = "gemini-2.5-flash";
     const systemPrompt = `
@@ -69,7 +169,8 @@ export default async function handler(req, res) {
 4. 수업목표·학습 주제는 차시별 주요 활동 내용을 그대로 반영. 다른 내용으로 대체하지 않음.
 5. 수업·평가 주안점으로 수업의도 작성, 그 의도에 맞게 평가계획 작성.
 6. 40분 수업(도입·전개·정리). 차시별 주요활동에 맞춰 전개 3가지(또는 2가지) 활동, 정리 마무리.
-
+${chasiBlock}
+${standardsBlock}
 [입력 정보]
 - 학년: ${grade}학년, 학기: ${semester}학기, 교과: ${subject}
 - 단원: ${resolvedUnit}
@@ -93,7 +194,7 @@ export default async function handler(req, res) {
   "competency": "교과 역량",
   "area": "해당 교과 영역",
   "coreIdea": "핵심 아이디어 (영역 핵심 아이디어를 기반으로 해당 차시에 맞게 재진술)",
-  "standard": "성취기준만 ([4국03-02] 형태. 핵심 아이디어 넣지 말 것)",
+  "standard": "위 [성취기준] 목록에서 반드시 선택 ([4국03-02] 형태. 비워두지 말 것)",
   "question": "탐구 질문",
   "objective": "학습 목표 한 문장",
   "topic": "학습 주제",
@@ -138,6 +239,9 @@ export default async function handler(req, res) {
         const jsonStr = text.replace(/```json/g, '').replace(/```/g, '').trim();
         const data = JSON.parse(jsonStr);
 
+        if (!data.standard || String(data.standard).trim() === '') {
+            if (standardsFallback) data.standard = standardsFallback;
+        }
         if (!data.coreIdea || String(data.coreIdea).trim() === '') {
             const coreIdea = getCoreIdeaFromFile(subject || '국어', data.area);
             if (coreIdea) {

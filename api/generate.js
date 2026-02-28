@@ -1,5 +1,4 @@
-// Vercel Serverless Function: api/generate.js
-import { GoogleGenerativeAI } from "@google/generative-ai";
+// Vercel Serverless Function: api/generate.js (REST API 사용 - ByteString 오류 회피)
 
 export const config = { api: { bodyParser: true } };
 
@@ -16,9 +15,7 @@ export default async function handler(req, res) {
         return res.status(500).json({ error: 'API Key not configured', details: 'Vercel 환경 변수에 GEMINI_API_KEY를 설정하세요.' });
     }
 
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-
+    const modelId = "gemini-2.5-flash";
     const systemPrompt = `
 당신은 2022 개정 교육과정에 정통한 초등학교 수업 설계 전문가입니다.
 2022 개정 교육과정 가이드라인을 준수하여 교수학습 과정안(약안) 초안을 작성하세요.
@@ -54,14 +51,27 @@ export default async function handler(req, res) {
 `;
 
     try {
-        const result = await model.generateContent(systemPrompt);
-        const response = await result.response;
-        const text = response.text();
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`;
+        const body = {
+            contents: [{ role: 'user', parts: [{ text: systemPrompt }] }],
+            generationConfig: { responseMimeType: 'application/json' }
+        };
+        const apiRes = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json; charset=utf-8' },
+            body: JSON.stringify(body)
+        });
+        if (!apiRes.ok) {
+            const errText = await apiRes.text();
+            throw new Error(`Gemini API ${apiRes.status}: ${errText.substring(0, 200)}`);
+        }
+        const apiData = await apiRes.json();
+        const text = apiData?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        if (!text) throw new Error('AI 응답이 비어 있습니다.');
 
         const jsonStr = text.replace(/```json/g, '').replace(/```/g, '').trim();
         const data = JSON.parse(jsonStr);
 
-        // activities가 문자열이면 배열로 변환 시도
         if (data.activities && !Array.isArray(data.activities)) {
             data.activities = [{ 단계: '전개', 형태: '전체', 활동: String(data.activities), 시간: '40', 자료: '', 유의점: '', 평가: '', 교사: '◉', 학생: '◦' }];
         }

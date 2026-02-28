@@ -1,5 +1,4 @@
 const express = require('express');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
 const dotenv = require('dotenv');
 const path = require('path');
 const fs = require('fs');
@@ -270,10 +269,7 @@ app.post('/api/generate', async (req, res) => {
         return res.status(500).json({ error: 'API Key not configured in .env file' });
     }
 
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const modelId = "gemini-1.5-flash";
-    const model = genAI.getGenerativeModel({ model: modelId });
-
+    const modelId = "gemini-2.5-flash";
     const resolvedUnitName = String(unitName || unit || '').replace(/[\u201c\u201d\u2018\u2019\u2026]/g, '');
     const refContext = loadReferenceMaterials(subject || '국어', grade || '3', resolvedUnitName, lesson);
     const refContextClean = refContext.replace(/[\u201c\u201d\u2018\u2019\u2026]/g, (m) => {
@@ -330,10 +326,24 @@ ${refContextClean}
 `;
 
     try {
-        console.log(`Gemini API 호출 중... (모델: ${modelId})`);
-        const result = await model.generateContent(systemPrompt);
-        const response = await result.response;
-        const text = response.text();
+        console.log(`Gemini REST API 호출 중... (모델: ${modelId})`);
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`;
+        const body = {
+            contents: [{ role: 'user', parts: [{ text: systemPrompt }] }],
+            generationConfig: { responseMimeType: 'application/json' }
+        };
+        const apiRes = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json; charset=utf-8' },
+            body: JSON.stringify(body)
+        });
+        if (!apiRes.ok) {
+            const errText = await apiRes.text();
+            throw new Error(`Gemini API ${apiRes.status}: ${errText.substring(0, 200)}`);
+        }
+        const apiData = await apiRes.json();
+        const text = apiData?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        if (!text) throw new Error('AI 응답이 비어 있습니다.');
         console.log('AI 응답 수신 성공:', text.substring(0, 100) + '...');
 
         const jsonStr = text.replace(/```json/g, '').replace(/```/g, '').trim();

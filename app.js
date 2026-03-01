@@ -31,8 +31,11 @@ const elements = {
     learningSheetBtn: document.getElementById('learning-sheet-btn'),
     learningSheetSection: document.getElementById('learning-sheet-section'),
     learningSheetIframe: document.getElementById('learning-sheet-iframe'),
+    learningSheetAnswerIframe: document.getElementById('learning-sheet-answer-iframe'),
     learningSheetPrint: document.getElementById('learning-sheet-print'),
+    learningSheetAnswerPrint: document.getElementById('learning-sheet-answer-print'),
     learningSheetClose: document.getElementById('learning-sheet-close'),
+    learningSheetTabs: document.querySelectorAll('.learning-sheet-tab'),
     toast: document.getElementById('toast'),
 };
 
@@ -42,7 +45,9 @@ document.addEventListener('DOMContentLoaded', () => {
     elements.downloadPdfBtn?.addEventListener('click', handlePrintPdf);
     elements.learningSheetBtn?.addEventListener('click', handleLearningSheet);
     elements.learningSheetPrint?.addEventListener('click', handleLearningSheetPrint);
+    elements.learningSheetAnswerPrint?.addEventListener('click', handleLearningSheetAnswerPrint);
     elements.learningSheetClose?.addEventListener('click', handleLearningSheetClose);
+    elements.learningSheetTabs?.forEach((tab) => tab.addEventListener('click', handleLearningSheetTab));
 
     elements.inputs.grade?.addEventListener('change', fetchUnits);
     elements.inputs.subject?.addEventListener('change', fetchUnits);
@@ -675,12 +680,30 @@ async function handleLearningSheet() {
             const err = await res.json().catch(() => ({}));
             throw new Error(err.details || err.error || `오류 ${res.status}`);
         }
-        const { html } = await res.json();
+        const { html, answerHtml } = await res.json();
         if (!html) throw new Error('학습지 내용이 비어 있습니다.');
         elements.learningSheetIframe.srcdoc = html;
+        if (answerHtml) {
+            elements.learningSheetAnswerIframe.srcdoc = answerHtml;
+        } else {
+            elements.learningSheetAnswerIframe.srcdoc = '<!DOCTYPE html><html lang="ko"><body><p>답안지가 생성되지 않았습니다.</p></body></html>';
+        }
+        elements.learningSheetIframe.onload = () => {
+            try {
+                const doc = elements.learningSheetIframe.contentDocument;
+                if (doc?.body) {
+                    doc.body.contentEditable = 'true';
+                    doc.body.style.minHeight = '100%';
+                }
+            } catch (_) { /* cross-origin 등 */ }
+        };
+        if (elements.learningSheetIframe.contentDocument?.body) {
+            elements.learningSheetIframe.contentDocument.body.contentEditable = 'true';
+        }
+        switchLearningSheetTab('sheet');
         elements.learningSheetSection?.classList.remove('hidden');
         elements.learningSheetSection?.scrollIntoView({ behavior: 'smooth' });
-        showToast('학습지가 생성되었습니다. PDF로 저장(인쇄) 버튼으로 인쇄하세요.');
+        showToast('학습지와 답안지가 생성되었습니다. 학습지는 수정 후 인쇄할 수 있습니다.');
     } catch (e) {
         showToast(e.message || '학습지 생성에 실패했습니다.');
     } finally {
@@ -689,8 +712,31 @@ async function handleLearningSheet() {
     }
 }
 
+function handleLearningSheetTab(e) {
+    const tab = e.target.closest('.learning-sheet-tab');
+    if (!tab?.dataset.tab) return;
+    switchLearningSheetTab(tab.dataset.tab);
+}
+
+function switchLearningSheetTab(tabId) {
+    const panes = document.querySelectorAll('.learning-sheet-pane');
+    elements.learningSheetTabs?.forEach((t) => {
+        t.classList.toggle('active', t.dataset.tab === tabId);
+        t.setAttribute('aria-selected', t.dataset.tab === tabId ? 'true' : 'false');
+    });
+    panes.forEach((p) => {
+        p.classList.toggle('active', (p.id === 'learning-sheet-iframe' && tabId === 'sheet') || (p.id === 'learning-sheet-answer-iframe' && tabId === 'answer'));
+    });
+}
+
 function handleLearningSheetPrint() {
     const iframe = elements.learningSheetIframe;
+    if (!iframe?.contentWindow) return;
+    iframe.contentWindow.print();
+}
+
+function handleLearningSheetAnswerPrint() {
+    const iframe = elements.learningSheetAnswerIframe;
     if (!iframe?.contentWindow) return;
     iframe.contentWindow.print();
 }

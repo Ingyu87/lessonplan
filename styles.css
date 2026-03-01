@@ -331,6 +331,33 @@ input::placeholder {
     border-radius: 16px;
 }
 
+.learning-sheet-tabs {
+    display: flex;
+    gap: 0.25rem;
+    margin-bottom: 0.5rem;
+}
+.learning-sheet-tab {
+    padding: 0.5rem 1rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--card-bg);
+    color: var(--text);
+    cursor: pointer;
+    font-size: 0.95rem;
+}
+.learning-sheet-tab:hover {
+    background: var(--bg);
+}
+.learning-sheet-tab.active {
+    background: var(--primary);
+    color: #fff;
+    border-color: var(--primary);
+}
+.learning-sheet-editable-hint {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    margin: 0 0 0.5rem 0;
+}
 .learning-sheet-frame-wrap {
     width: 100%;
     min-height: 420px;
@@ -338,8 +365,18 @@ input::placeholder {
     border-radius: 12px;
     overflow: hidden;
     background: #fff;
+    position: relative;
 }
-
+.learning-sheet-pane {
+    display: none;
+    width: 100%;
+    min-height: 420px;
+    height: 70vh;
+    border: none;
+}
+.learning-sheet-pane.active {
+    display: block;
+}
 #learning-sheet-iframe {
     width: 100%;
     min-height: 420px;

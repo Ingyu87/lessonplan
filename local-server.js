@@ -589,25 +589,48 @@ app.post('/api/learning-sheet', async (req, res) => {
 
 위 내용에 맞는 학습지 HTML을 **그대로** 출력하세요.`;
 
-    try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+    const answerPrompt = `당신은 초등학교 수업 자료 설계 전문가입니다.
+아래 **해당 차시 정보**에 맞는 **답안지** 한 장 분량의 HTML을 작성해 주세요. 학습지와 동일한 구성이지만, 빈칸·질문에 대한 정답이 채워진 형태여야 합니다.
+
+[규칙]
+1. 출력은 **HTML만** 반환하세요. <!DOCTYPE html>부터 </html>까지의 완전한 HTML 한 덩어리만 출력합니다.
+2. 인쇄 시 A4 한 페이지, 상단에는 "답안지", 단원명·차시를 넣고, 학습지에 있던 빈칸·질문에는 정답을 채워 넣으세요.
+3. 전체 문서는 한국어로만, <style> 태그로 스타일을 포함하세요.
+
+[해당 차시 정보]
+- 학년: ${grade}학년, 교과: ${subject}, 단원: ${unitName || '-'}, 차시: ${lesson}차시
+- 학습 주제·목표·탐구 질문: ${topicText || '(없음)'}
+
+위 내용에 맞는 답안지 HTML을 **그대로** 출력하세요.`;
+
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+    const callGemini = async (promptText) => {
         const apiRes = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json; charset=utf-8' },
             body: JSON.stringify({
-                contents: [{ role: 'user', parts: [{ text: prompt }] }],
+                contents: [{ role: 'user', parts: [{ text: promptText }] }],
                 generationConfig: { maxOutputTokens: 4096 }
             })
         });
         if (!apiRes.ok) throw new Error(`Gemini ${apiRes.status}`);
         const apiData = await apiRes.json();
-        let text = apiData?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-        text = text.trim();
+        let t = apiData?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        return t.trim();
+    };
+    const wrapHtml = (text, title) => {
         if (text.startsWith('```')) text = text.replace(/^```html?\n?/, '').replace(/\n?```\s*$/, '');
         if (!text.includes('<html') && !text.includes('<!DOCTYPE')) {
-            text = `<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><title>학습지</title><style>body{font-family:'Malgun Gothic',sans-serif;padding:20px;font-size:14px;} @media print{body{padding:0;}}</style></head><body>${text}</body></html>`;
+            text = `<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><title>${title}</title><style>body{font-family:'Malgun Gothic',sans-serif;padding:20px;font-size:14px;} @media print{body{padding:0;}}</style></head><body>${text}</body></html>`;
         }
-        res.status(200).json({ html: text });
+        return text;
+    };
+
+    try {
+        const [sheetRaw, answerRaw] = await Promise.all([ callGemini(prompt), callGemini(answerPrompt) ]);
+        const html = wrapHtml(sheetRaw, '학습지');
+        const answerHtml = wrapHtml(answerRaw, '답안지');
+        res.status(200).json({ html, answerHtml });
     } catch (e) {
         res.status(500).json({ error: '학습지 생성 실패', details: e.message });
     }

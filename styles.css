@@ -171,6 +171,12 @@ h2::before {
     gap: 0.35rem;
 }
 
+.semester-notice {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-top: 0.25rem;
+}
+
 label {
     font-size: 0.8rem;
     font-weight: 600;
@@ -315,6 +321,30 @@ input::placeholder {
 
 .unit-fallback.hidden {
     display: none !important;
+}
+
+.learning-sheet-section {
+    margin-top: 1.5rem;
+    padding: 1rem;
+    background: var(--card-bg);
+    border: 2px solid var(--border);
+    border-radius: 16px;
+}
+
+.learning-sheet-frame-wrap {
+    width: 100%;
+    min-height: 420px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    background: #fff;
+}
+
+#learning-sheet-iframe {
+    width: 100%;
+    min-height: 420px;
+    height: 70vh;
+    border: none;
 }
 
 /* ===== 약안 서식 출력 (가독성 유지) ===== */

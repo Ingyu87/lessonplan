@@ -28,6 +28,11 @@ const elements = {
     },
     downloadBtn: document.getElementById('download-docx'),
     downloadPdfBtn: document.getElementById('download-pdf'),
+    learningSheetBtn: document.getElementById('learning-sheet-btn'),
+    learningSheetSection: document.getElementById('learning-sheet-section'),
+    learningSheetIframe: document.getElementById('learning-sheet-iframe'),
+    learningSheetPrint: document.getElementById('learning-sheet-print'),
+    learningSheetClose: document.getElementById('learning-sheet-close'),
     toast: document.getElementById('toast'),
 };
 
@@ -35,6 +40,9 @@ document.addEventListener('DOMContentLoaded', () => {
     elements.generateBtn?.addEventListener('click', handleGenerate);
     elements.downloadBtn?.addEventListener('click', handleDownload);
     elements.downloadPdfBtn?.addEventListener('click', handlePrintPdf);
+    elements.learningSheetBtn?.addEventListener('click', handleLearningSheet);
+    elements.learningSheetPrint?.addEventListener('click', handleLearningSheetPrint);
+    elements.learningSheetClose?.addEventListener('click', handleLearningSheetClose);
 
     elements.inputs.grade?.addEventListener('change', fetchUnits);
     elements.inputs.subject?.addEventListener('change', fetchUnits);
@@ -636,6 +644,59 @@ function handlePrintPdf() {
         return;
     }
     window.print();
+}
+
+async function handleLearningSheet() {
+    if (!lastGeneratedData) {
+        showToast('먼저 과정안을 생성한 뒤 학습지를 만들 수 있습니다.');
+        return;
+    }
+    const unitVal = elements.inputs.unit?.value === '__direct__'
+        ? (elements.inputs.unitFallback?.value || '')
+        : (elements.inputs.unit?.value || '');
+    const payload = {
+        grade: elements.inputs.grade?.value,
+        subject: elements.inputs.subject?.value,
+        unitName: unitVal,
+        lesson: elements.inputs.lesson?.value,
+        topic: lastGeneratedData.topic,
+        objective: lastGeneratedData.objective,
+        question: lastGeneratedData.question,
+    };
+    elements.learningSheetBtn.disabled = true;
+    elements.learningSheetBtn.textContent = '학습지 생성 중...';
+    try {
+        const res = await fetch(`${API_BASE}/api/learning-sheet`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.details || err.error || `오류 ${res.status}`);
+        }
+        const { html } = await res.json();
+        if (!html) throw new Error('학습지 내용이 비어 있습니다.');
+        elements.learningSheetIframe.srcdoc = html;
+        elements.learningSheetSection?.classList.remove('hidden');
+        elements.learningSheetSection?.scrollIntoView({ behavior: 'smooth' });
+        showToast('학습지가 생성되었습니다. PDF로 저장(인쇄) 버튼으로 인쇄하세요.');
+    } catch (e) {
+        showToast(e.message || '학습지 생성에 실패했습니다.');
+    } finally {
+        elements.learningSheetBtn.disabled = false;
+        elements.learningSheetBtn.textContent = '학습지 PDF 만들기';
+    }
+}
+
+function handleLearningSheetPrint() {
+    const iframe = elements.learningSheetIframe;
+    if (!iframe?.contentWindow) return;
+    iframe.contentWindow.print();
+}
+
+function handleLearningSheetClose() {
+    elements.learningSheetSection?.classList.add('hidden');
 }
 
 function showToast(message) {

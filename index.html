@@ -54,6 +54,7 @@
                             <option value="1">1학기</option>
                             <option value="2">2학기</option>
                         </select>
+                        <p class="semester-notice">※ 2학기는 추후 업데이트 예정입니다. (현재 1학기 기준 연간지도 반영)</p>
                     </div>
                     <div class="input-group">
                         <label for="subject">교과목</label>
@@ -106,10 +107,24 @@
                     <div class="action-buttons">
                         <button id="download-docx" class="secondary-btn">DOCX 다운로드</button>
                         <button id="download-pdf" class="secondary-btn">PDF 저장(인쇄)</button>
+                        <button id="learning-sheet-btn" class="secondary-btn">학습지 PDF 만들기</button>
                     </div>
                 </div>
 
                 <div id="yakan-output" class="yakan-output"></div>
+            </section>
+
+            <section id="learning-sheet-section" class="learning-sheet-section hidden">
+                <div class="result-header">
+                    <h2>학습지 (AI 생성)</h2>
+                    <div class="action-buttons">
+                        <button id="learning-sheet-print" class="secondary-btn">PDF로 저장(인쇄)</button>
+                        <button id="learning-sheet-close" class="secondary-btn">닫기</button>
+                    </div>
+                </div>
+                <div id="learning-sheet-frame-wrap" class="learning-sheet-frame-wrap">
+                    <iframe id="learning-sheet-iframe" title="학습지"></iframe>
+                </div>
             </section>
         </main>
 

@@ -436,11 +436,13 @@ app.post('/api/generate', async (req, res) => {
 
 [수업 설계 흐름 - 반드시 이 순서로 설계]
 1. **[연간지도 계획]의 해당 차시 "주요 학습 내용 및 활동"**이 이 수업의 핵심이다. 이 내용을 **축약·변형하지 말고** 그대로 반영한다.
-2. 그 차시별 주요 활동과 **직접 관련된** 성취기준·핵심아이디어만 선택한다. 해당 차시와 무관한 내용(예: 다른 단원의 '관점', '다양한 관점' 등)은 넣지 않는다.
-3. 차시별 주요 활동을 해결하기 위한 **탐구질문**을 만든다.
-4. **수업목표(objective)·학습 주제(topic)**는 차시별 주요 활동 내용을 **그대로** 반영한다. 다른 내용으로 대체하지 않는다.
-5. **수업·평가 주안점**을 두고 **수업의도(intent)**를 작성하고, 그 **의도에 맞게** **평가계획(evaluationPlan)**을 작성한다.
-6. **평가계획 실행**을 위한 **40분 수업**(도입·전개·정리). **차시별 주요활동**에 맞춰 전개에서 **3가지 활동**(실현 어려우면 2가지), 정리에서 마무리 활동을 제시한다.
+2. **학습 주제 및 목표**는 연간지도 계획의 "차시별 주요 학습 내용 및 활동"에서 **그대로 뽑아** 반영한다. 다른 표현으로 바꾸거나 엉뚱한 내용으로 대체하지 않는다.
+3. 그 차시별 주요 활동과 **직접 관련된** 성취기준·핵심아이디어만 선택한다. 해당 차시와 무관한 내용(예: 다른 단원의 '관점', '다양한 관점' 등)은 넣지 않는다.
+4. 차시별 주요 활동을 해결하기 위한 **탐구질문**을 만든다.
+5. **수업목표(objective)·학습 주제(topic)**는 위 2번대로 차시별 주요 학습 내용을 **그대로** 반영한다. 다른 내용으로 대체하지 않는다.
+6. **수업·평가 주안점**을 두고 **수업의도(intent)**를 작성하고, 그 **의도에 맞게** **평가계획(evaluationPlan)**을 작성한다.
+7. **평가계획 실행**을 위한 **40분 수업**(도입·전개·정리). **차시별 주요활동**에 맞춰 전개에서 **3가지 활동**(실현 어려우면 2가지), 정리에서 마무리 활동을 제시한다.
+(정리: objective·topic은 반드시 [이 차시의 핵심]에 제시된 "N차시 주요 학습 내용 및 활동" 문장을 그대로 학습 주제·목표로 사용할 것.)
 
 [입력 정보]
 - 학년: ${grade}학년, 학기: ${semester}학기, 교과: ${subject}
@@ -561,6 +563,53 @@ ${refContextClean}
             details: error.message,
             stack: error.stack
         });
+    }
+});
+
+app.post('/api/learning-sheet', async (req, res) => {
+    const apiKey = (process.env.GEMINI_API_KEY || '').trim();
+    if (!apiKey) {
+        return res.status(500).json({ error: 'API Key not configured in .env file' });
+    }
+    const { grade, subject, unitName, lesson, topic, objective, question } = req.body || {};
+    const topicText = [topic, objective, question].filter(Boolean).join(' / ');
+
+    const prompt = `당신은 초등학교 수업 자료 설계 전문가입니다.
+아래 **해당 차시의 학습 주제·목표·탐구 질문**에 맞는 **학습지(활동지)** 한 장 분량의 HTML을 작성해 주세요.
+
+[규칙]
+1. 출력은 **HTML만** 반환하세요. 마크다운이나 설명 없이 <!DOCTYPE html>부터 </html>까지의 완전한 HTML 한 덩어리만 출력합니다.
+2. 인쇄했을 때 A4 한 페이지 안에 들어가도록 CSS를 포함하세요.
+3. 학습지 구성: 상단에 "학습지", 단원명·차시, 학습 목표 1~2문장, 그 아래 학생이 직접 쓰거나 활동할 수 있는 영역(빈칸 채우기, 질문에 답하기, ○/× 등). 해당 차시 학습 내용과 직접 연관된 문제·활동으로 구성할 것.
+4. 전체 문서는 한국어로만. body 안에만 내용을 넣어도 됩니다. 스타일은 <style> 태그로 포함하세요.
+
+[해당 차시 정보]
+- 학년: ${grade}학년, 교과: ${subject}, 단원: ${unitName || '-'}, 차시: ${lesson}차시
+- 학습 주제·목표·탐구 질문: ${topicText || '(없음)'}
+
+위 내용에 맞는 학습지 HTML을 **그대로** 출력하세요.`;
+
+    try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+        const apiRes = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json; charset=utf-8' },
+            body: JSON.stringify({
+                contents: [{ role: 'user', parts: [{ text: prompt }] }],
+                generationConfig: { maxOutputTokens: 4096 }
+            })
+        });
+        if (!apiRes.ok) throw new Error(`Gemini ${apiRes.status}`);
+        const apiData = await apiRes.json();
+        let text = apiData?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        text = text.trim();
+        if (text.startsWith('```')) text = text.replace(/^```html?\n?/, '').replace(/\n?```\s*$/, '');
+        if (!text.includes('<html') && !text.includes('<!DOCTYPE')) {
+            text = `<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><title>학습지</title><style>body{font-family:'Malgun Gothic',sans-serif;padding:20px;font-size:14px;} @media print{body{padding:0;}}</style></head><body>${text}</body></html>`;
+        }
+        res.status(200).json({ html: text });
+    } catch (e) {
+        res.status(500).json({ error: '학습지 생성 실패', details: e.message });
     }
 });
 

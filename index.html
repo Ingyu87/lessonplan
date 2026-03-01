@@ -48,14 +48,7 @@
                             <option value="6">6학년</option>
                         </select>
                     </div>
-                    <div class="input-group">
-                        <label for="semester">학기</label>
-                        <select id="semester">
-                            <option value="1">1학기</option>
-                            <option value="2">2학기</option>
-                        </select>
-                        <p class="semester-notice">※ 2학기는 추후 업데이트 예정입니다. (현재 1학기 기준 연간지도 반영)</p>
-                    </div>
+                    <input type="hidden" id="semester" value="1">
                     <div class="input-group">
                         <label for="subject">교과목</label>
                         <select id="subject">
@@ -107,31 +100,12 @@
                     <div class="action-buttons">
                         <button id="download-docx" class="secondary-btn">DOCX 다운로드</button>
                         <button id="download-pdf" class="secondary-btn">PDF 저장(인쇄)</button>
-                        <button id="learning-sheet-btn" class="secondary-btn">학습지 PDF 만들기</button>
+                        <button id="learning-sheet-btn" class="secondary-btn">학습지·답안지 DOCX 다운로드</button>
                     </div>
                 </div>
+                <p class="learning-sheet-hint">※ 학습지·답안지는 Word(DOCX)로 다운로드됩니다. 다운로드 후 Word에서 수정하세요.</p>
 
                 <div id="yakan-output" class="yakan-output"></div>
-            </section>
-
-            <section id="learning-sheet-section" class="learning-sheet-section hidden">
-                <div class="result-header">
-                    <h2>학습지 / 답안지 (AI 생성)</h2>
-                    <div class="action-buttons">
-                        <button id="learning-sheet-print" class="secondary-btn">학습지 PDF(인쇄)</button>
-                        <button id="learning-sheet-answer-print" class="secondary-btn">답안지 PDF(인쇄)</button>
-                        <button id="learning-sheet-close" class="secondary-btn">닫기</button>
-                    </div>
-                </div>
-                <div class="learning-sheet-tabs" role="tablist">
-                    <button type="button" class="learning-sheet-tab active" role="tab" aria-selected="true" data-tab="sheet">학습지</button>
-                    <button type="button" class="learning-sheet-tab" role="tab" aria-selected="false" data-tab="answer">답안지</button>
-                </div>
-                <p class="learning-sheet-editable-hint">※ 학습지 내용은 직접 수정할 수 있습니다. 수정 후 「학습지 PDF(인쇄)」로 저장하세요.</p>
-                <div id="learning-sheet-frame-wrap" class="learning-sheet-frame-wrap">
-                    <iframe id="learning-sheet-iframe" title="학습지" class="learning-sheet-pane active"></iframe>
-                    <iframe id="learning-sheet-answer-iframe" title="답안지" class="learning-sheet-pane"></iframe>
-                </div>
             </section>
         </main>
 

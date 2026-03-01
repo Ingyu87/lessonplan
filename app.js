@@ -29,13 +29,6 @@ const elements = {
     downloadBtn: document.getElementById('download-docx'),
     downloadPdfBtn: document.getElementById('download-pdf'),
     learningSheetBtn: document.getElementById('learning-sheet-btn'),
-    learningSheetSection: document.getElementById('learning-sheet-section'),
-    learningSheetIframe: document.getElementById('learning-sheet-iframe'),
-    learningSheetAnswerIframe: document.getElementById('learning-sheet-answer-iframe'),
-    learningSheetPrint: document.getElementById('learning-sheet-print'),
-    learningSheetAnswerPrint: document.getElementById('learning-sheet-answer-print'),
-    learningSheetClose: document.getElementById('learning-sheet-close'),
-    learningSheetTabs: document.querySelectorAll('.learning-sheet-tab'),
     toast: document.getElementById('toast'),
 };
 
@@ -44,10 +37,6 @@ document.addEventListener('DOMContentLoaded', () => {
     elements.downloadBtn?.addEventListener('click', handleDownload);
     elements.downloadPdfBtn?.addEventListener('click', handlePrintPdf);
     elements.learningSheetBtn?.addEventListener('click', handleLearningSheet);
-    elements.learningSheetPrint?.addEventListener('click', handleLearningSheetPrint);
-    elements.learningSheetAnswerPrint?.addEventListener('click', handleLearningSheetAnswerPrint);
-    elements.learningSheetClose?.addEventListener('click', handleLearningSheetClose);
-    elements.learningSheetTabs?.forEach((tab) => tab.addEventListener('click', handleLearningSheetTab));
 
     elements.inputs.grade?.addEventListener('change', fetchUnits);
     elements.inputs.subject?.addEventListener('change', fetchUnits);
@@ -668,14 +657,8 @@ async function handleLearningSheet() {
         objective: lastGeneratedData.objective,
         question: lastGeneratedData.question,
     };
-    const loadingHtml = '<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><style>body{font-family:\'Malgun Gothic\',sans-serif;display:flex;align-items:center;justify-content:center;min-height:200px;margin:0;color:#555;} </style></head><body>학습지 생성 중...</body></html>';
-    elements.learningSheetIframe.srcdoc = loadingHtml;
-    elements.learningSheetAnswerIframe.srcdoc = loadingHtml;
-    switchLearningSheetTab('sheet');
-    elements.learningSheetSection?.classList.remove('hidden');
-    elements.learningSheetSection?.scrollIntoView({ behavior: 'smooth' });
     elements.learningSheetBtn.disabled = true;
-    elements.learningSheetBtn.textContent = '학습지 생성 중...';
+    elements.learningSheetBtn.textContent = '생성 중...';
     try {
         const res = await fetch(`${API_BASE}/api/learning-sheet`, {
             method: 'POST',
@@ -690,68 +673,47 @@ async function handleLearningSheet() {
         if (!html || (typeof html === 'string' && html.trim().length < 50)) {
             throw new Error('학습지 내용을 불러오지 못했습니다.');
         }
-        elements.learningSheetIframe.srcdoc = html;
-        if (answerHtml && answerHtml.trim().length > 20) {
-            elements.learningSheetAnswerIframe.srcdoc = answerHtml;
-        } else {
-            elements.learningSheetAnswerIframe.srcdoc = '<!DOCTYPE html><html lang="ko"><body><p>답안지가 생성되지 않았습니다.</p></body></html>';
-        }
-        elements.learningSheetIframe.onload = () => {
-            try {
-                const doc = elements.learningSheetIframe.contentDocument;
-                if (doc?.body) {
-                    doc.body.contentEditable = 'true';
-                    doc.body.style.minHeight = '100%';
-                }
-            } catch (_) { /* cross-origin 등 */ }
+        const subj = (elements.inputs.subject?.value || '교과').replace(/\s/g, '');
+        const lessonVal = elements.inputs.lesson?.value || '1';
+        const baseName = `학습지_${subj}_${(unitVal || '단원').replace(/\s/g, '')}_${lessonVal}차시`;
+
+        const downloadDocx = (blob, filename) => {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            a.click();
+            URL.revokeObjectURL(url);
         };
-        if (elements.learningSheetIframe.contentDocument?.body) {
-            elements.learningSheetIframe.contentDocument.body.contentEditable = 'true';
+
+        const doc1 = htmlToDocxDocument(html);
+        const blob1 = await docx.Packer.toBlob(doc1);
+        downloadDocx(blob1, `${baseName}_학습지.docx`);
+
+        if (answerHtml && answerHtml.trim().length > 20) {
+            const doc2 = htmlToDocxDocument(answerHtml);
+            const blob2 = await docx.Packer.toBlob(doc2);
+            downloadDocx(blob2, `${baseName}_답안지.docx`);
         }
-        showToast('학습지와 답안지가 생성되었습니다. 학습지는 수정 후 인쇄할 수 있습니다.');
+        showToast('학습지·답안지 DOCX를 다운로드했습니다. Word에서 수정하세요.');
     } catch (e) {
-        const errMsg = e.message || '학습지 생성에 실패했습니다.';
-        showToast(errMsg);
-        const errHtml = `<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><style>body{font-family:'Malgun Gothic',sans-serif;padding:24px;color:#c00;}</style></head><body><p>${errMsg.replace(/</g, '&lt;')}</p><p>로컬에서 테스트 시 local-server를 실행했는지, 배포 환경에서는 API 키 설정을 확인하세요.</p></body></html>`;
-        elements.learningSheetIframe.srcdoc = errHtml;
-        elements.learningSheetAnswerIframe.srcdoc = errHtml;
+        showToast(e.message || '학습지 생성에 실패했습니다.');
     } finally {
         elements.learningSheetBtn.disabled = false;
-        elements.learningSheetBtn.textContent = '학습지 PDF 만들기';
+        elements.learningSheetBtn.textContent = '학습지·답안지 DOCX 다운로드';
     }
 }
 
-function handleLearningSheetTab(e) {
-    const tab = e.target.closest('.learning-sheet-tab');
-    if (!tab?.dataset.tab) return;
-    switchLearningSheetTab(tab.dataset.tab);
-}
-
-function switchLearningSheetTab(tabId) {
-    const panes = document.querySelectorAll('.learning-sheet-pane');
-    elements.learningSheetTabs?.forEach((t) => {
-        t.classList.toggle('active', t.dataset.tab === tabId);
-        t.setAttribute('aria-selected', t.dataset.tab === tabId ? 'true' : 'false');
-    });
-    panes.forEach((p) => {
-        p.classList.toggle('active', (p.id === 'learning-sheet-iframe' && tabId === 'sheet') || (p.id === 'learning-sheet-answer-iframe' && tabId === 'answer'));
-    });
-}
-
-function handleLearningSheetPrint() {
-    const iframe = elements.learningSheetIframe;
-    if (!iframe?.contentWindow) return;
-    iframe.contentWindow.print();
-}
-
-function handleLearningSheetAnswerPrint() {
-    const iframe = elements.learningSheetAnswerIframe;
-    if (!iframe?.contentWindow) return;
-    iframe.contentWindow.print();
-}
-
-function handleLearningSheetClose() {
-    elements.learningSheetSection?.classList.add('hidden');
+/** HTML 문자열을 docx Document로 변환 (본문 텍스트를 문단 단위로) */
+function htmlToDocxDocument(html) {
+    const { Document, Paragraph } = docx;
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    const body = doc.body;
+    const raw = (body && (body.innerText || body.textContent)) ? (body.innerText || body.textContent).trim() : '';
+    const blocks = raw ? raw.split(/\n\n+/).map(s => s.trim()).filter(Boolean) : ['(내용 없음)'];
+    const children = blocks.map(text => new Paragraph({ text }));
+    return new Document({ sections: [{ children }] });
 }
 
 function showToast(message) {

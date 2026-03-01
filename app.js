@@ -689,11 +689,10 @@ async function handleLearningSheet() {
         const doc1 = htmlToDocxDocument(html);
         const blob1 = await docx.Packer.toBlob(doc1);
         downloadDocx(blob1, `${baseName}_학습지.docx`);
-
         if (answerHtml && answerHtml.trim().length > 20) {
             const doc2 = htmlToDocxDocument(answerHtml);
             const blob2 = await docx.Packer.toBlob(doc2);
-            downloadDocx(blob2, `${baseName}_답안지.docx`);
+            setTimeout(() => downloadDocx(blob2, `${baseName}_답안지.docx`), 150);
         }
         showToast('학습지·답안지 DOCX를 다운로드했습니다. Word에서 수정하세요.');
     } catch (e) {

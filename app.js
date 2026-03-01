@@ -687,13 +687,13 @@ async function handleLearningSheet() {
         };
 
         const doc1 = htmlToDocxDocument(html);
-        const blob1 = await docx.Packer.toBlob(doc1);
+        const doc2 = htmlToDocxDocument(answerHtml ?? '');
+        const [blob1, blob2] = await Promise.all([
+            docx.Packer.toBlob(doc1),
+            docx.Packer.toBlob(doc2),
+        ]);
         downloadDocx(blob1, `${baseName}_학습지.docx`);
-        if (answerHtml && answerHtml.trim().length > 20) {
-            const doc2 = htmlToDocxDocument(answerHtml);
-            const blob2 = await docx.Packer.toBlob(doc2);
-            setTimeout(() => downloadDocx(blob2, `${baseName}_답안지.docx`), 150);
-        }
+        setTimeout(() => downloadDocx(blob2, `${baseName}_답안지.docx`), 150);
         showToast('학습지·답안지 DOCX를 다운로드했습니다. Word에서 수정하세요.');
     } catch (e) {
         showToast(e.message || '학습지 생성에 실패했습니다.');

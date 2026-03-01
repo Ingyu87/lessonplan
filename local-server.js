@@ -259,7 +259,7 @@ function loadReferenceMaterials(subject, grade, unitName, lesson) {
                 const words = chasiContent.replace(/[을를이가에와과]\s*/g, ' ').split(/\s+/).filter(w => w.length >= 2);
                 const keywords = [...new Set([...words, ...(chasiContent.includes('인물') ? ['인물'] : []), ...(chasiContent.includes('이야기') ? ['이야기'] : []), ...(chasiContent.includes('흐름') ? ['흐름'] : []), ...(chasiContent.includes('관계') ? ['관계'] : [])])];
                 const scored = filtered.map(s => {
-                    const text = (s.성취기준 || '') + (s['성취기준 해설'] || '');
+                    const text = s.성취기준 || '';
                     const matchCount = keywords.filter(k => text.includes(k)).length;
                     return { ...s, _score: matchCount };
                 });
@@ -270,13 +270,11 @@ function loadReferenceMaterials(subject, grade, unitName, lesson) {
                     matched.forEach(s => {
                         const areaPart = s.영역 ? ` [영역: ${s.영역}]` : '';
                         context += `- ${s.성취기준}${areaPart}\n`;
-                        if (s['성취기준 해설']) context += `  해설: ${s['성취기준 해설']}\n`;
                     });
                     context += '\n[기타 성취기준 참고]\n';
                     rest.forEach(s => {
                         const areaPart = s.영역 ? ` [영역: ${s.영역}]` : '';
                         context += `- ${s.성취기준}${areaPart}\n`;
-                        if (s['성취기준 해설']) context += `  해설: ${s['성취기준 해설']}\n`;
                     });
                 } else {
                     filtered = filtered.slice(0, 18);
@@ -285,7 +283,6 @@ function loadReferenceMaterials(subject, grade, unitName, lesson) {
                         const areaPart = s.영역 ? ` [영역: ${s.영역}]` : '';
                         const unitPart = s.단원 ? ` [단원: ${s.단원}]` : '';
                         context += `- ${s.성취기준}${areaPart}${unitPart}\n`;
-                        if (s['성취기준 해설']) context += `  해설: ${s['성취기준 해설']}\n`;
                     });
                 }
             } else {
@@ -296,7 +293,6 @@ function loadReferenceMaterials(subject, grade, unitName, lesson) {
                         const areaPart = s.영역 ? ` [영역: ${s.영역}]` : '';
                         const unitPart = s.단원 ? ` [단원: ${s.단원}]` : '';
                         context += `- ${s.성취기준}${areaPart}${unitPart}\n`;
-                        if (s['성취기준 해설']) context += `  해설: ${s['성취기준 해설']}\n`;
                     });
                 }
             }
@@ -470,7 +466,7 @@ app.post('/api/generate', async (req, res) => {
 - 모든 문장은 **한국어만** 사용하세요. 영어 레이블(competency, standard 등)은 사용하지 마세요.
 - competency: 해당 교과 역량. area: 위 [성취기준]에 나온 해당 차시·단원의 영역.
 - coreIdea(핵심 아이디어): [핵심 아이디어] 참고에 해당 영역이 있으면 그걸 기반으로, 해당 차시의 학습 맥락(단원·주요 학습 내용·탐구 질문)에 맞게 재진술. 영역 핵심 아이디어는 그대로 두되, 차시에 맞게 수정·적용 가능. 성취기준 코드([4국03-02] 등) 넣지 말 것.
-- standard(성취기준): [이 차시에 적합한 성취기준] 섹션에 제시된 것 중에서 **반드시** 선택. [4국03-02] 코드와 설명 문장 **전체**를 그대로 복사할 것. 코드만 넣지 말 것.
+- standard(성취기준): [이 차시에 적합한 성취기준] 섹션에서 **성취기준 문장만** 선택하여 넣을 것. 해설은 포함하지 말 것. 코드와 설명 문장 전체를 그대로 복사.
 - objective(학습 목표): [연간지도 계획] 해당 차시 "주요 학습 내용 및 활동" 내용을 **그대로** 반영. 축약·변형·다른 내용으로 대체 금지.
 - topic(학습 주제): 차시별 주요활동 내용을 **그대로** 반영. 해당 차시와 무관한 내용 넣지 말 것.
 - intent: 수업·평가 주안점을 두고 작성한 수업자의 의도. 이 의도에 맞게 평가계획을 설계한다.
@@ -483,7 +479,7 @@ app.post('/api/generate', async (req, res) => {
   "competency": "교과 역량",
   "area": "해당 교과 교육과정의 영역 (예: 듣기·말하기, 읽기, 문학, 매체)",
   "coreIdea": "핵심 아이디어 (영역 핵심 아이디어를 기반으로 해당 차시에 맞게 재진술)",
-  "standard": "위 [성취기준] 목록에서 선택. 코드+문장 전체를 그대로 복사. 코드만 넣지 말 것.",
+  "standard": "위 [성취기준] 목록에서 선택. 성취기준 문장만 넣을 것(해설 제외). 코드+문장 전체를 그대로 복사.",
   "question": "탐구 질문",
   "objective": "학습 목표 한 문장",
   "topic": "학습 주제",

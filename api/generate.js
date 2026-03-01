@@ -64,7 +64,7 @@ function getStandardsBlock(grade, subject, unitName, chasiContent) {
             const words = chasiContent.replace(/[을를이가에와과]\s*/g, ' ').split(/\s+/).filter(w => w.length >= 2);
             const keywords = [...new Set([...words, ...(chasiContent.includes('인물') ? ['인물'] : []), ...(chasiContent.includes('이야기') ? ['이야기'] : []), ...(chasiContent.includes('흐름') ? ['흐름'] : []), ...(chasiContent.includes('관계') ? ['관계'] : [])])];
             const scored = filtered.map(s => {
-                const text = (s.성취기준 || '') + (s['성취기준 해설'] || '');
+                const text = s.성취기준 || '';
                 const matchCount = keywords.filter(k => text.includes(k)).length;
                 return { ...s, _score: matchCount };
             });
@@ -81,7 +81,6 @@ function getStandardsBlock(grade, subject, unitName, chasiContent) {
             block += '[★★ 이 차시에 적합한 성취기준 - 우선 선택 ★★]\n';
             matched.forEach(s => {
                 block += `- ${s.성취기준}${s.영역 ? ` [영역: ${s.영역}]` : ''}\n`;
-                if (s['성취기준 해설']) block += `  해설: ${s['성취기준 해설']}\n`;
             });
             block += '\n[기타 성취기준 참고]\n';
             rest.forEach(s => {
@@ -90,7 +89,6 @@ function getStandardsBlock(grade, subject, unitName, chasiContent) {
         } else {
             rest.forEach(s => {
                 block += `- ${s.성취기준}${s.영역 ? ` [영역: ${s.영역}]` : ''}${s.단원 ? ` [단원: ${s.단원}]` : ''}\n`;
-                if (s['성취기준 해설']) block += `  해설: ${s['성취기준 해설']}\n`;
             });
         }
         return { block, fallback, standardsForLookup };
@@ -213,7 +211,7 @@ ${standardsBlock}
   "competency": "교과 역량",
   "area": "해당 교과 영역",
   "coreIdea": "핵심 아이디어 (영역 핵심 아이디어를 기반으로 해당 차시에 맞게 재진술)",
-  "standard": "위 [성취기준] 목록에서 반드시 선택. [4국03-02] 코드와 설명 문장 전체를 그대로 복사할 것. 코드만 넣지 말 것.",
+  "standard": "위 [성취기준] 목록에서 선택. 성취기준 문장만 넣을 것(해설 제외). 코드+문장 전체를 그대로 복사.",
   "question": "탐구 질문",
   "objective": "학습 목표 한 문장",
   "topic": "학습 주제",

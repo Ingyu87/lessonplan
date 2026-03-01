@@ -668,6 +668,12 @@ async function handleLearningSheet() {
         objective: lastGeneratedData.objective,
         question: lastGeneratedData.question,
     };
+    const loadingHtml = '<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><style>body{font-family:\'Malgun Gothic\',sans-serif;display:flex;align-items:center;justify-content:center;min-height:200px;margin:0;color:#555;} </style></head><body>학습지 생성 중...</body></html>';
+    elements.learningSheetIframe.srcdoc = loadingHtml;
+    elements.learningSheetAnswerIframe.srcdoc = loadingHtml;
+    switchLearningSheetTab('sheet');
+    elements.learningSheetSection?.classList.remove('hidden');
+    elements.learningSheetSection?.scrollIntoView({ behavior: 'smooth' });
     elements.learningSheetBtn.disabled = true;
     elements.learningSheetBtn.textContent = '학습지 생성 중...';
     try {
@@ -676,14 +682,16 @@ async function handleLearningSheet() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
         });
+        const data = await res.json().catch(() => ({}));
         if (!res.ok) {
-            const err = await res.json().catch(() => ({}));
-            throw new Error(err.details || err.error || `오류 ${res.status}`);
+            throw new Error(data.details || data.error || `오류 ${res.status}`);
         }
-        const { html, answerHtml } = await res.json();
-        if (!html) throw new Error('학습지 내용이 비어 있습니다.');
+        const { html, answerHtml } = data;
+        if (!html || (typeof html === 'string' && html.trim().length < 50)) {
+            throw new Error('학습지 내용을 불러오지 못했습니다.');
+        }
         elements.learningSheetIframe.srcdoc = html;
-        if (answerHtml) {
+        if (answerHtml && answerHtml.trim().length > 20) {
             elements.learningSheetAnswerIframe.srcdoc = answerHtml;
         } else {
             elements.learningSheetAnswerIframe.srcdoc = '<!DOCTYPE html><html lang="ko"><body><p>답안지가 생성되지 않았습니다.</p></body></html>';
@@ -700,12 +708,13 @@ async function handleLearningSheet() {
         if (elements.learningSheetIframe.contentDocument?.body) {
             elements.learningSheetIframe.contentDocument.body.contentEditable = 'true';
         }
-        switchLearningSheetTab('sheet');
-        elements.learningSheetSection?.classList.remove('hidden');
-        elements.learningSheetSection?.scrollIntoView({ behavior: 'smooth' });
         showToast('학습지와 답안지가 생성되었습니다. 학습지는 수정 후 인쇄할 수 있습니다.');
     } catch (e) {
-        showToast(e.message || '학습지 생성에 실패했습니다.');
+        const errMsg = e.message || '학습지 생성에 실패했습니다.';
+        showToast(errMsg);
+        const errHtml = `<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><style>body{font-family:'Malgun Gothic',sans-serif;padding:24px;color:#c00;}</style></head><body><p>${errMsg.replace(/</g, '&lt;')}</p><p>로컬에서 테스트 시 local-server를 실행했는지, 배포 환경에서는 API 키 설정을 확인하세요.</p></body></html>`;
+        elements.learningSheetIframe.srcdoc = errHtml;
+        elements.learningSheetAnswerIframe.srcdoc = errHtml;
     } finally {
         elements.learningSheetBtn.disabled = false;
         elements.learningSheetBtn.textContent = '학습지 PDF 만들기';

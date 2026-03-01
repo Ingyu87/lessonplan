@@ -93,12 +93,31 @@ function getAreaFromStandards(subject, gradeBand, unitName) {
     } catch (e) { return ''; }
 }
 
+/** 올바른 성취기준 양식: [N과목코드NN-NN] 문장 */
+const STANDARD_CODE_REGEX = /^\[\d+[국수사도과실체음미영]\d+-\d+\]\s*.+/;
+
+/** AI가 "수학6116." 등 잘못된 형식으로 반환한 경우, 문장으로 검색해 올바른 [코드] 문장으로 교체 */
+function normalizeStandardFormat(standard, standardsForLookup) {
+    if (!standard || typeof standard !== 'string' || !Array.isArray(standardsForLookup) || standardsForLookup.length === 0) return standard;
+    const trimmed = standard.trim();
+    if (STANDARD_CODE_REGEX.test(trimmed)) return trimmed;
+    const descMatch = trimmed.match(/^[가-힣]+\d*\.?\s*(.+)$/s);
+    const description = (descMatch ? descMatch[1] : trimmed).trim();
+    if (!description || description.length < 10) return standard;
+    const keyPhrase = description.slice(0, 40).replace(/\s+/g, ' ').trim();
+    const found = standardsForLookup.find(s => {
+        const text = (s.성취기준 || '').trim();
+        return text.includes(keyPhrase) || text.includes(description.slice(0, 30));
+    });
+    return found ? found.성취기준.trim() : standard;
+}
+
 /** AI가 성취기준 코드만 반환한 경우(문장 생략) 전체 문장으로 보완 */
 function ensureFullStandard(standard, subject, grade) {
     if (!standard || typeof standard !== 'string') return standard;
     const trimmed = standard.trim();
-    if (!/^\[\d+국\d+-\d+\]\s*$/.test(trimmed)) return standard;
-    const code = trimmed.match(/^(\[\d+국\d+-\d+\])/)?.[1] || trimmed;
+    if (!/^\[\d+[국수사도과실체음미영]\d+-\d+\]\s*$/.test(trimmed)) return standard;
+    const code = trimmed.match(/^(\[\d+[국수사도과실체음미영]\d+-\d+\])/)?.[1] || trimmed;
     try {
         const standardsPath = path.join(baseDir, '2022개정교육과정 성취기준 및 해설.json');
         if (!fs.existsSync(standardsPath)) return standard;
@@ -466,7 +485,7 @@ app.post('/api/generate', async (req, res) => {
 - 모든 문장은 **한국어만** 사용하세요. 영어 레이블(competency, standard 등)은 사용하지 마세요.
 - competency: 해당 교과 역량. area: 위 [성취기준]에 나온 해당 차시·단원의 영역.
 - coreIdea(핵심 아이디어): [핵심 아이디어] 참고에 해당 영역이 있으면 그걸 기반으로, 해당 차시의 학습 맥락(단원·주요 학습 내용·탐구 질문)에 맞게 재진술. 영역 핵심 아이디어는 그대로 두되, 차시에 맞게 수정·적용 가능. 성취기준 코드([4국03-02] 등) 넣지 말 것.
-- standard(성취기준): [이 차시에 적합한 성취기준] 섹션에서 **성취기준 문장만** 선택하여 넣을 것. 해설은 포함하지 말 것. 코드와 설명 문장 전체를 그대로 복사.
+- standard(성취기준): [이 차시에 적합한 성취기준] 섹션에서 선택. 반드시 [숫자과목코드숫자-숫자] 형식으로 시작 (예: [6수01-16], [2국01-01]). '수학6116.' 등 다른 형식 사용 금지. 코드+문장 전체를 그대로 복사.
 - objective(학습 목표): [연간지도 계획] 해당 차시 "주요 학습 내용 및 활동" 내용을 **그대로** 반영. 축약·변형·다른 내용으로 대체 금지.
 - topic(학습 주제): 차시별 주요활동 내용을 **그대로** 반영. 해당 차시와 무관한 내용 넣지 말 것.
 - intent: 수업·평가 주안점을 두고 작성한 수업자의 의도. 이 의도에 맞게 평가계획을 설계한다.
@@ -479,7 +498,7 @@ app.post('/api/generate', async (req, res) => {
   "competency": "교과 역량",
   "area": "해당 교과 교육과정의 영역 (예: 듣기·말하기, 읽기, 문학, 매체)",
   "coreIdea": "핵심 아이디어 (영역 핵심 아이디어를 기반으로 해당 차시에 맞게 재진술)",
-  "standard": "위 [성취기준] 목록에서 선택. 성취기준 문장만 넣을 것(해설 제외). 코드+문장 전체를 그대로 복사.",
+  "standard": "위 [성취기준] 목록에서 선택. 반드시 [숫자과목코드숫자-숫자] 형식으로 시작 (예: [6수01-16], [2국01-01]). '수학6116.' 등 다른 형식 사용 금지. 코드+문장 전체를 그대로 복사.",
   "question": "탐구 질문",
   "objective": "학습 목표 한 문장",
   "topic": "학습 주제",
@@ -531,8 +550,20 @@ ${refContextClean}
         const jsonStr = text.replace(/```json/g, '').replace(/```/g, '').trim();
         try {
             const data = JSON.parse(jsonStr);
-            if (data.standard && /^\[\d+국\d+-\d+\]\s*$/.test(String(data.standard).trim())) {
-                data.standard = ensureFullStandard(data.standard, subject || '국어', grade || '3');
+            if (data.standard && String(data.standard).trim() !== '') {
+                let standardsForLookup = [];
+                try {
+                    const standardsPath = path.join(baseDir, '2022개정교육과정 성취기준 및 해설.json');
+                    if (fs.existsSync(standardsPath)) {
+                        const standards = JSON.parse(fs.readFileSync(standardsPath, 'utf8'));
+                        const gradeBand = getGradeBand(grade || '3');
+                        standardsForLookup = standards.filter(s => s.교과 === (subject || '국어') && s.학년 === gradeBand);
+                    }
+                } catch (_) {}
+                data.standard = normalizeStandardFormat(data.standard, standardsForLookup);
+                if (/^\[\d+[국수사도과실체음미영]\d+-\d+\]\s*$/.test(String(data.standard).trim())) {
+                    data.standard = ensureFullStandard(data.standard, subject || '국어', grade || '3');
+                }
             }
             if (!data.area || String(data.area).trim() === '') {
                 const gradeBand = getGradeBand(grade || '3');

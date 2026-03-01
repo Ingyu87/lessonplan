@@ -347,10 +347,10 @@ input::placeholder {
     color: #fff;
     border-color: var(--primary);
 }
-.learning-sheet-hint {
+.learning-sheet-editable-hint {
     font-size: 0.85rem;
     color: var(--text-muted);
-    margin: 0.25rem 0 0.75rem 0;
+    margin: 0 0 0.5rem 0;
 }
 .learning-sheet-frame-wrap {
     width: 100%;

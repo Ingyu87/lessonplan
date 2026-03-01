@@ -97,15 +97,34 @@ function getStandardsBlock(grade, subject, unitName, chasiContent) {
     }
 }
 
+/** 올바른 성취기준 양식: [N과목코드NN-NN] 문장 (예: [6수01-16], [2국01-01]) */
+const STANDARD_CODE_REGEX = /^\[\d+[국수사도과실체음미영]\d+-\d+\]\s*.+/;
+
 /** AI가 코드만 반환한 경우(문장 생략) 전체 문장으로 보완 */
 function ensureFullStandard(standard, standardsForLookup) {
     if (!standard || typeof standard !== 'string') return standard;
     const trimmed = standard.trim();
-    const codeOnly = /^\[\d+국\d+-\d+\]\s*$/;
+    const codeOnly = /^\[\d+[국수사도과실체음미영]\d+-\d+\]\s*$/;
     if (!codeOnly.test(trimmed)) return standard;
-    const code = trimmed.match(/^(\[\d+국\d+-\d+\])/)?.[1] || trimmed;
+    const code = trimmed.match(/^(\[\d+[국수사도과실체음미영]\d+-\d+\])/)?.[1] || trimmed;
     const full = standardsForLookup.find(s => (s.성취기준 || '').startsWith(code))?.성취기준;
     return full || standard;
+}
+
+/** AI가 "수학6116." 등 잘못된 형식으로 반환한 경우, 문장으로 검색해 올바른 [코드] 문장으로 교체 */
+function normalizeStandardFormat(standard, standardsForLookup) {
+    if (!standard || typeof standard !== 'string' || !standardsForLookup?.length) return standard;
+    const trimmed = standard.trim();
+    if (STANDARD_CODE_REGEX.test(trimmed)) return trimmed;
+    const descMatch = trimmed.match(/^[가-힣]+\d*\.?\s*(.+)$/s);
+    const description = (descMatch ? descMatch[1] : trimmed).trim();
+    if (!description || description.length < 10) return standard;
+    const keyPhrase = description.slice(0, 40).replace(/\s+/g, ' ').trim();
+    const found = standardsForLookup.find(s => {
+        const text = (s.성취기준 || '').trim();
+        return text.includes(keyPhrase) || text.includes(description.slice(0, 30));
+    });
+    return found ? found.성취기준.trim() : standard;
 }
 
 function getCoreIdeaFromFile(subject, area) {
@@ -211,7 +230,7 @@ ${standardsBlock}
   "competency": "교과 역량",
   "area": "해당 교과 영역",
   "coreIdea": "핵심 아이디어 (영역 핵심 아이디어를 기반으로 해당 차시에 맞게 재진술)",
-  "standard": "위 [성취기준] 목록에서 선택. 성취기준 문장만 넣을 것(해설 제외). 코드+문장 전체를 그대로 복사.",
+  "standard": "위 [성취기준] 목록에서 선택. 반드시 [숫자과목코드숫자-숫자] 형식으로 시작 (예: [6수01-16], [2국01-01]). '수학6116.' 등 다른 형식 사용 금지. 코드+문장 전체를 그대로 복사.",
   "question": "탐구 질문",
   "objective": "학습 목표 한 문장",
   "topic": "학습 주제",
@@ -259,6 +278,7 @@ ${standardsBlock}
         if (!data.standard || String(data.standard).trim() === '') {
             if (standardsFallback) data.standard = standardsFallback;
         } else if (standardsForLookup.length > 0) {
+            data.standard = normalizeStandardFormat(data.standard, standardsForLookup);
             data.standard = ensureFullStandard(data.standard, standardsForLookup);
         }
         if (!data.coreIdea || String(data.coreIdea).trim() === '') {

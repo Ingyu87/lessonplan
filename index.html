@@ -98,8 +98,7 @@
                 <div class="result-header">
                     <h2>2. 생성된 교수·학습 과정안 (약안 서식) <span class="copy-hint">(칸 클릭 시 복사)</span></h2>
                     <div class="action-buttons">
-                        <button id="download-docx" class="secondary-btn">DOCX 다운로드</button>
-                        <button id="download-pdf" class="secondary-btn">PDF 저장(인쇄)</button>
+                        <button id="download-pdf" class="secondary-btn">교수학습안 PDF 다운로드</button>
                         <button id="learning-sheet-btn" class="secondary-btn">학습지 PDF 만들기</button>
                     </div>
                 </div>
@@ -111,8 +110,8 @@
                 <div class="result-header">
                     <h2>학습지 / 답안지 (AI 생성)</h2>
                     <div class="action-buttons">
-                        <button id="learning-sheet-docx" class="secondary-btn">학습지 DOCX 다운로드</button>
-                        <button id="learning-sheet-answer-docx" class="secondary-btn">답안지 DOCX 다운로드</button>
+                        <button id="learning-sheet-pdf" class="secondary-btn">학습지 PDF 다운로드</button>
+                        <button id="learning-sheet-answer-pdf" class="secondary-btn">답안지 PDF 다운로드 (학습지에 대한 답)</button>
                         <button id="learning-sheet-close" class="secondary-btn">닫기</button>
                     </div>
                 </div>
@@ -134,7 +133,7 @@
 
     <div id="toast" class="toast hidden">복사되었습니다!</div>
 
-    <script src="https://cdn.jsdelivr.net/npm/docx@8.1.0/build/index.iife.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js" crossorigin="anonymous"></script>
     <script src="app.js" type="module"></script>
 </body>
 

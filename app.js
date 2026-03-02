@@ -28,14 +28,13 @@ const elements = {
         date: document.getElementById('date'),
         model: document.getElementById('model'),
     },
-    downloadBtn: document.getElementById('download-docx'),
     downloadPdfBtn: document.getElementById('download-pdf'),
     learningSheetBtn: document.getElementById('learning-sheet-btn'),
     learningSheetSection: document.getElementById('learning-sheet-section'),
     learningSheetIframe: document.getElementById('learning-sheet-iframe'),
     learningSheetAnswerIframe: document.getElementById('learning-sheet-answer-iframe'),
-    learningSheetDocx: document.getElementById('learning-sheet-docx'),
-    learningSheetAnswerDocx: document.getElementById('learning-sheet-answer-docx'),
+    learningSheetPdf: document.getElementById('learning-sheet-pdf'),
+    learningSheetAnswerPdf: document.getElementById('learning-sheet-answer-pdf'),
     learningSheetClose: document.getElementById('learning-sheet-close'),
     learningSheetTabs: document.querySelectorAll('.learning-sheet-tab'),
     toast: document.getElementById('toast'),
@@ -43,11 +42,10 @@ const elements = {
 
 document.addEventListener('DOMContentLoaded', () => {
     elements.generateBtn?.addEventListener('click', handleGenerate);
-    elements.downloadBtn?.addEventListener('click', handleDownload);
-    elements.downloadPdfBtn?.addEventListener('click', handlePrintPdf);
+    elements.downloadPdfBtn?.addEventListener('click', handleDownloadPdf);
     elements.learningSheetBtn?.addEventListener('click', handleLearningSheet);
-    elements.learningSheetDocx?.addEventListener('click', handleLearningSheetDocx);
-    elements.learningSheetAnswerDocx?.addEventListener('click', handleLearningSheetAnswerDocx);
+    elements.learningSheetPdf?.addEventListener('click', handleLearningSheetPdf);
+    elements.learningSheetAnswerPdf?.addEventListener('click', handleLearningSheetAnswerPdf);
     elements.learningSheetClose?.addEventListener('click', handleLearningSheetClose);
     elements.learningSheetTabs?.forEach((tab) => tab.addEventListener('click', handleLearningSheetTab));
 
@@ -474,183 +472,19 @@ function renderYakanFormat(data) {
     elements.yakanOutput.innerHTML = html;
 }
 
-function handleDownload() {
+function handleDownloadPdf() {
     if (!lastGeneratedData) {
         showToast('먼저 과정안을 생성해주세요.');
         return;
     }
-    const { Document, Packer, Paragraph, TextRun } = docx;
-    const d = lastGeneratedData;
-    const subj = elements.inputs.subject?.value || '';
+    const subj = (elements.inputs.subject?.value || '').replace(/\s/g, '');
     const unitVal = elements.inputs.unit?.value === '__direct__'
         ? (elements.inputs.unitFallback?.value || '')
         : (elements.inputs.unit?.value || '');
-    const lessonVal = elements.inputs.lesson?.value || '';
-    const target = elements.inputs.target?.value || '';
-    const date = elements.inputs.date?.value || '';
-    const model = (d.model || elements.inputs.model?.value || '').trim();
-
-    const Table = docx.Table;
-    const TableRow = docx.TableRow;
-    const TableCell = docx.TableCell;
-    if (!Table || !TableRow || !TableCell) {
-        handleDownloadFallback(d, subj, unitVal, lessonVal);
-        return;
-    }
-
-    const p = (text) => new Paragraph({ children: [new TextRun({ text: String(text || '-') })] });
-    const cell = (content) => new TableCell({
-        children: [content instanceof Paragraph ? content : p(content)],
-    });
-
-    const headerRow = new TableRow({
-        children: [
-            cell('단원'),
-            cell('대상'),
-            cell('일시'),
-        ],
-    });
-    const headerDataRow = new TableRow({
-        children: [cell(unitVal), cell(target), cell(date)],
-    });
-
-    const chasiRow = new TableRow({
-        children: [cell('차시'), cell('교수·학습 모형')],
-    });
-    const chasiDataRow = new TableRow({
-        children: [cell(`${lessonVal}차시`), cell(model || '지도서 각론 등에서 확인')],
-    });
-
-    const analysisRows = [
-        new TableRow({ children: [cell('교과 역량'), cell(toKoreanOnly(toDisplayText(d.competency)))] }),
-        new TableRow({ children: [cell('영역'), cell(toKoreanOnly(toDisplayText(d.area)) || '해당 교과 교육과정에서 기재')] }),
-        new TableRow({ children: [cell('핵심 아이디어'), cell(toKoreanOnly(toDisplayText(d.coreIdea)))] }),
-        new TableRow({ children: [cell('성취기준'), cell(toKoreanOnly(toDisplayText(d.standard)))] }),
-        new TableRow({ children: [cell('탐구 질문'), cell(toKoreanOnly(toDisplayText(d.question)))] }),
-    ];
-
-    const evalPlanText = Array.isArray(d.evaluationPlan) && d.evaluationPlan.length > 0
-        ? d.evaluationPlan.map(ep =>
-            `${toDisplayText(ep.category)} | ${toDisplayText(ep.element)} | 상:${toDisplayText(ep.high)} 중:${toDisplayText(ep.middle)} 하:${toDisplayText(ep.low)} | ${toDisplayText(ep.feedback)}`
-        ).join('\n')
-        : toDisplayText(d.feedback);
-
-    const goalRows = [
-        new TableRow({ children: [cell('학습 목표'), cell(toKoreanOnly(toDisplayText(d.objective)))] }),
-        new TableRow({ children: [cell('학습 주제'), cell(toKoreanOnly(toDisplayText(d.topic)))] }),
-        new TableRow({ children: [cell('수업자 의도'), cell(toKoreanOnly(toDisplayText(d.intent)))] }),
-        new TableRow({ children: [cell('평가 계획'), cell(toKoreanOnly(evalPlanText))] }),
-    ];
-
-    const activityHeaderRow = new TableRow({
-        children: [
-            cell('학습 단계'),
-            cell('학습형태'),
-            cell('활동'),
-            cell('교사'),
-            cell('학생'),
-            cell('시간(분)'),
-            cell('자료'),
-            cell('유의점'),
-            cell('평가'),
-        ],
-    });
-    const activityDataRows = Array.isArray(d.activities) && d.activities.length > 0
-        ? d.activities.map((a) => new TableRow({
-            children: [
-                cell(a.단계 || ''),
-                cell(toDisplayText(a.형태)),
-                cell(toKoreanOnly(toDisplayText(a.활동))),
-                cell(toKoreanOnly(toDisplayText(a.교사)) || '◉'),
-                cell(toKoreanOnly(toDisplayText(a.학생)) || '◦'),
-                cell(toDisplayText(a.시간)),
-                cell(toDisplayText(a.자료)),
-                cell(toDisplayText(a.유의점)),
-                cell(toDisplayText(a.평가)),
-            ],
-        }))
-        : [new TableRow({
-            children: [
-                cell('도입/전개/정리'),
-                cell(''),
-                cell(toKoreanOnly(toDisplayText(d.activities))),
-                cell('◉'),
-                cell('◦'),
-                cell(''),
-                cell(''),
-                cell(''),
-                cell(''),
-            ],
-        })];
-
-    const children = [
-        new Paragraph({ text: '2022 개정 교육과정 적용 교수·학습 과정안(약안 서식)', heading: 'Heading1' }),
-        new Paragraph({ text: `(${subj}) 교수·학습 과정안`, heading: 'Heading2' }),
-        new Paragraph({ text: '' }),
-        new Table({ rows: [headerRow, headerDataRow] }),
-        new Paragraph({ text: '' }),
-        new Table({ rows: [chasiRow, chasiDataRow] }),
-        new Paragraph({ text: '교육과정 분석 (차시)', heading: 'Heading3' }),
-        new Table({ rows: analysisRows }),
-        new Paragraph({ text: '학습 목표·수업자 의도·평가 계획', heading: 'Heading3' }),
-        new Table({ rows: goalRows }),
-        new Paragraph({ text: '교수·학습 활동', heading: 'Heading3' }),
-        new Table({ rows: [activityHeaderRow, ...activityDataRows] }),
-    ];
-
-    const doc = new Document({ sections: [{ children }] });
-
-    Packer.toBlob(doc).then(blob => {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `교수학습과정안_${subj}_${unitVal}_${lessonVal}차시.docx`;
-        a.click();
-        URL.revokeObjectURL(url);
-        showToast('DOCX 파일이 다운로드되었습니다.');
-    });
-}
-
-function handleDownloadFallback(d, subj, unitVal, lessonVal) {
-    const { Document, Packer, Paragraph } = docx;
-    const children = [
-        new Paragraph({ text: '2022 개정 교육과정 적용 교수·학습 과정안(약안 서식)', heading: 'Heading1' }),
-        new Paragraph({ text: `(${subj}) 교수·학습 과정안`, heading: 'Heading2' }),
-        new Paragraph({ text: `단원: ${unitVal} | 차시: ${lessonVal}차시` }),
-        new Paragraph({ text: '' }),
-        new Paragraph({ text: '교과 역량', heading: 'Heading4' }),
-        new Paragraph({ text: toKoreanOnly(toDisplayText(d.competency)) }),
-        new Paragraph({ text: '성취기준', heading: 'Heading4' }),
-        new Paragraph({ text: toKoreanOnly(toDisplayText(d.standard)) }),
-        new Paragraph({ text: '탐구 질문', heading: 'Heading4' }),
-        new Paragraph({ text: toKoreanOnly(toDisplayText(d.question)) }),
-        new Paragraph({ text: '학습 목표', heading: 'Heading4' }),
-        new Paragraph({ text: toKoreanOnly(toDisplayText(d.objective)) }),
-        new Paragraph({ text: '수업자 의도', heading: 'Heading4' }),
-        new Paragraph({ text: toKoreanOnly(toDisplayText(d.intent)) }),
-        new Paragraph({ text: '평가 계획', heading: 'Heading4' }),
-        new Paragraph({ text: toKoreanOnly(toDisplayText(d.feedback)) }),
-        new Paragraph({ text: '교수·학습 활동', heading: 'Heading4' }),
-        new Paragraph({ text: formatActivitiesForFallback(d.activities) }),
-    ];
-    const doc = new Document({ sections: [{ children }] });
-    docx.Packer.toBlob(doc).then(blob => {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `교수학습과정안_${subj}_${unitVal}_${lessonVal}차시.docx`;
-        a.click();
-        URL.revokeObjectURL(url);
-        showToast('DOCX 파일이 다운로드되었습니다.');
-    });
-}
-
-function handlePrintPdf() {
-    if (!lastGeneratedData) {
-        showToast('먼저 과정안을 생성해주세요.');
-        return;
-    }
-    window.print();
+    const lessonVal = elements.inputs.lesson?.value || '1';
+    const filename = `교수학습과정안_${subj}_${(unitVal || '단원').replace(/\s/g, '')}_${lessonVal}차시.pdf`;
+    const opt = { margin: 10, filename, image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2 }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } };
+    html2pdf().set(opt).from(elements.yakanOutput).save().then(() => showToast('교수학습안 PDF 다운로드되었습니다.'));
 }
 
 async function handleLearningSheet() {
@@ -696,7 +530,7 @@ async function handleLearningSheet() {
         lastAnswerSheetHtml = (answerHtml && answerHtml.trim().length > 20) ? answerHtml : '';
         elements.learningSheetIframe.srcdoc = html;
         elements.learningSheetAnswerIframe.srcdoc = lastAnswerSheetHtml || '<!DOCTYPE html><html lang="ko"><body><p>답안지</p></body></html>';
-        showToast('학습지와 답안지가 생성되었습니다. 탭에서 확인 후 DOCX로 다운로드하세요.');
+        showToast('학습지와 답안지가 생성되었습니다. 탭에서 확인 후 PDF로 다운로드하세요.');
     } catch (e) {
         showToast(e.message || '학습지 생성에 실패했습니다.');
     } finally {
@@ -714,33 +548,36 @@ function getLearningSheetBaseName() {
     return `학습지_${subj}_${(unitVal || '단원').replace(/\s/g, '')}_${lessonVal}차시`;
 }
 
-function downloadDocxFromHtml(html, filename) {
-    const doc = htmlToDocxDocument(html);
-    docx.Packer.toBlob(doc).then(blob => {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        a.click();
-        URL.revokeObjectURL(url);
-        showToast('DOCX 다운로드되었습니다.');
-    });
+function downloadPdfFromElement(element, filename) {
+    if (!element) return;
+    const opt = { margin: 10, filename, image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2 }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } };
+    html2pdf().set(opt).from(element).save().then(() => showToast('PDF 다운로드되었습니다.'));
 }
 
-function handleLearningSheetDocx() {
+function handleLearningSheetPdf() {
     if (!lastLearningSheetHtml) {
         showToast('먼저 학습지를 생성해주세요.');
         return;
     }
-    downloadDocxFromHtml(lastLearningSheetHtml, `${getLearningSheetBaseName()}_학습지.docx`);
-}
-
-function handleLearningSheetAnswerDocx() {
-    if (!lastAnswerSheetHtml) {
-        showToast('먼저 학습지를 생성해주세요.');
+    const body = elements.learningSheetIframe?.contentDocument?.body;
+    if (!body) {
+        showToast('학습지 내용을 불러올 수 없습니다.');
         return;
     }
-    downloadDocxFromHtml(lastAnswerSheetHtml, `${getLearningSheetBaseName()}_답안지.docx`);
+    downloadPdfFromElement(body, `${getLearningSheetBaseName()}_학습지.pdf`);
+}
+
+function handleLearningSheetAnswerPdf() {
+    if (!lastAnswerSheetHtml) {
+        showToast('먼저 학습지를 생성해주세요. (답안지는 학습지에 대한 답입니다.)');
+        return;
+    }
+    const body = elements.learningSheetAnswerIframe?.contentDocument?.body;
+    if (!body) {
+        showToast('답안지 내용을 불러올 수 없습니다.');
+        return;
+    }
+    downloadPdfFromElement(body, `${getLearningSheetBaseName()}_답안지(학습지에대한답).pdf`);
 }
 
 function handleLearningSheetTab(e) {
@@ -761,17 +598,6 @@ function switchLearningSheetTab(tabId) {
 
 function handleLearningSheetClose() {
     elements.learningSheetSection?.classList.add('hidden');
-}
-
-function htmlToDocxDocument(html) {
-    const { Document, Paragraph } = docx;
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(html, 'text/html');
-    const body = doc.body;
-    const raw = (body && (body.innerText || body.textContent)) ? (body.innerText || body.textContent).trim() : '';
-    const blocks = raw ? raw.split(/\n\n+/).map(s => s.trim()).filter(Boolean) : ['(내용 없음)'];
-    const children = blocks.map(text => new Paragraph({ text }));
-    return new Document({ sections: [{ children }] });
 }
 
 function showToast(message) {

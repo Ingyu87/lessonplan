@@ -344,66 +344,6 @@ input::placeholder {
     display: none !important;
 }
 
-.learning-sheet-section {
-    margin-top: 1.5rem;
-    padding: 1rem;
-    background: var(--card-bg);
-    border: 2px solid var(--border);
-    border-radius: 16px;
-}
-
-.learning-sheet-tabs {
-    display: flex;
-    gap: 0.25rem;
-    margin-bottom: 0.5rem;
-}
-.learning-sheet-tab {
-    padding: 0.5rem 1rem;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--card-bg);
-    color: var(--text);
-    cursor: pointer;
-    font-size: 0.95rem;
-}
-.learning-sheet-tab:hover {
-    background: var(--bg);
-}
-.learning-sheet-tab.active {
-    background: var(--primary);
-    color: #fff;
-    border-color: var(--primary);
-}
-.learning-sheet-hint {
-    font-size: 0.85rem;
-    color: var(--text-muted);
-    margin: 0.25rem 0 0.75rem 0;
-}
-.learning-sheet-frame-wrap {
-    width: 100%;
-    min-height: 420px;
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    overflow: hidden;
-    background: #fff;
-    position: relative;
-}
-.learning-sheet-pane {
-    display: none;
-    width: 100%;
-    min-height: 420px;
-    height: 70vh;
-    border: none;
-}
-.learning-sheet-pane.active {
-    display: block;
-}
-#learning-sheet-iframe {
-    width: 100%;
-    min-height: 420px;
-    height: 70vh;
-    border: none;
-}
 
 /* ===== 약안 서식 출력 (가독성 유지) ===== */
 .yakan-output {
@@ -671,38 +611,6 @@ input::placeholder {
     }
     .card h2 {
         font-size: 1.05rem;
-    }
-    .learning-sheet-section {
-        padding: 0.75rem;
-        margin-top: 1rem;
-    }
-    .learning-sheet-section .result-header {
-        margin-bottom: 0.5rem;
-    }
-    .learning-sheet-section .action-buttons {
-        gap: 0.35rem;
-    }
-    .learning-sheet-section .secondary-btn {
-        font-size: 0.8rem;
-        padding: 0.5rem 0.6rem;
-    }
-    .learning-sheet-tabs {
-        gap: 0.2rem;
-        margin-bottom: 0.5rem;
-    }
-    .learning-sheet-tab {
-        padding: 0.5rem 0.75rem;
-        font-size: 0.9rem;
-        flex: 1;
-        min-width: 0;
-    }
-    .learning-sheet-frame-wrap {
-        min-height: 320px;
-    }
-    .learning-sheet-pane,
-    #learning-sheet-iframe {
-        min-height: 320px;
-        height: 55vh;
     }
     .yakan-output {
         padding: 1rem 0.75rem;

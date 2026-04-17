@@ -10,8 +10,6 @@ const API_BASE = (typeof window !== 'undefined' && (window.location.protocol ===
 let lastGeneratedData = null;
 let generatedPlansByType = { general: null, inquiry: null };
 let activeResultTab = 'general';
-let lastLearningSheetHtml = null;
-let lastAnswerSheetHtml = null;
 let unitList = [];
 let unitsFetchController = null;
 
@@ -81,25 +79,12 @@ const elements = {
         model: document.getElementById('model'),
     },
     downloadPdfBtn: document.getElementById('download-pdf'),
-    learningSheetBtn: document.getElementById('learning-sheet-btn'),
-    learningSheetSection: document.getElementById('learning-sheet-section'),
-    learningSheetIframe: document.getElementById('learning-sheet-iframe'),
-    learningSheetAnswerIframe: document.getElementById('learning-sheet-answer-iframe'),
-    learningSheetPdf: document.getElementById('learning-sheet-pdf'),
-    learningSheetAnswerPdf: document.getElementById('learning-sheet-answer-pdf'),
-    learningSheetClose: document.getElementById('learning-sheet-close'),
-    learningSheetTabs: document.querySelectorAll('.learning-sheet-tab'),
     toast: document.getElementById('toast'),
 };
 
 document.addEventListener('DOMContentLoaded', () => {
     elements.generateBtn?.addEventListener('click', handleGenerate);
     elements.downloadPdfBtn?.addEventListener('click', handleDownloadPdf);
-    elements.learningSheetBtn?.addEventListener('click', handleLearningSheet);
-    elements.learningSheetPdf?.addEventListener('click', handleLearningSheetPdf);
-    elements.learningSheetAnswerPdf?.addEventListener('click', handleLearningSheetAnswerPdf);
-    elements.learningSheetClose?.addEventListener('click', handleLearningSheetClose);
-    elements.learningSheetTabs?.forEach((tab) => tab.addEventListener('click', handleLearningSheetTab));
     elements.resultTabs?.forEach((tab) => tab.addEventListener('click', handleResultTab));
 
     elements.inputs.grade?.addEventListener('change', fetchUnits);
@@ -586,120 +571,6 @@ function handleDownloadPdf() {
     const filename = `교수학습과정안_${typeLabel}_${subj}_${(unitVal || '단원').replace(/\s/g, '')}_${lessonVal}차시.pdf`;
     const opt = { margin: 10, filename, image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2 }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } };
     html2pdf().set(opt).from(elements.yakanOutput).save().then(() => showToast('교수학습안 PDF 다운로드되었습니다.'));
-}
-
-async function handleLearningSheet() {
-    const currentData = generatedPlansByType[activeResultTab] || lastGeneratedData;
-    if (!currentData) {
-        showToast('먼저 과정안을 생성한 뒤 학습지를 만들 수 있습니다.');
-        return;
-    }
-    const unitVal = elements.inputs.unit?.value === '__direct__'
-        ? (elements.inputs.unitFallback?.value || '')
-        : (elements.inputs.unit?.value || '');
-    const payload = {
-        grade: elements.inputs.grade?.value,
-        subject: elements.inputs.subject?.value,
-        unitName: unitVal,
-        lesson: elements.inputs.lesson?.value,
-        topic: currentData.topic,
-        objective: currentData.objective,
-        question: currentData.question,
-    };
-    const loadingHtml = '<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><style>body{font-family:\'Malgun Gothic\',sans-serif;display:flex;align-items:center;justify-content:center;min-height:200px;margin:0;color:#555;}</style></head><body>학습지 생성 중...</body></html>';
-    elements.learningSheetIframe.srcdoc = loadingHtml;
-    elements.learningSheetAnswerIframe.srcdoc = loadingHtml;
-    switchLearningSheetTab('sheet');
-    elements.learningSheetSection?.classList.remove('hidden');
-    elements.learningSheetSection?.scrollIntoView({ behavior: 'smooth' });
-    elements.learningSheetBtn.disabled = true;
-    elements.learningSheetBtn.textContent = '생성 중...';
-    try {
-        const res = await fetch(`${API_BASE}/api/learning-sheet`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) {
-            throw new Error(data.details || data.error || `오류 ${res.status}`);
-        }
-        const { html, answerHtml } = data;
-        if (!html || (typeof html === 'string' && html.trim().length < 50)) {
-            throw new Error('학습지 내용을 불러오지 못했습니다.');
-        }
-        lastLearningSheetHtml = html;
-        lastAnswerSheetHtml = (answerHtml && answerHtml.trim().length > 20) ? answerHtml : '';
-        elements.learningSheetIframe.srcdoc = html;
-        elements.learningSheetAnswerIframe.srcdoc = lastAnswerSheetHtml || '<!DOCTYPE html><html lang="ko"><body><p>답안지</p></body></html>';
-        showToast('학습지와 답안지가 생성되었습니다. 탭에서 확인 후 PDF로 다운로드하세요.');
-    } catch (e) {
-        showToast(e.message || '학습지 생성에 실패했습니다.');
-    } finally {
-        elements.learningSheetBtn.disabled = false;
-        elements.learningSheetBtn.textContent = '학습지 PDF 만들기';
-    }
-}
-
-function getLearningSheetBaseName() {
-    const unitVal = elements.inputs.unit?.value === '__direct__'
-        ? (elements.inputs.unitFallback?.value || '')
-        : (elements.inputs.unit?.value || '');
-    const subj = (elements.inputs.subject?.value || '교과').replace(/\s/g, '');
-    const lessonVal = elements.inputs.lesson?.value || '1';
-    return `학습지_${subj}_${(unitVal || '단원').replace(/\s/g, '')}_${lessonVal}차시`;
-}
-
-function downloadPdfFromElement(element, filename) {
-    if (!element) return;
-    const opt = { margin: 10, filename, image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2 }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } };
-    html2pdf().set(opt).from(element).save().then(() => showToast('PDF 다운로드되었습니다.'));
-}
-
-function handleLearningSheetPdf() {
-    if (!lastLearningSheetHtml) {
-        showToast('먼저 학습지를 생성해주세요.');
-        return;
-    }
-    const body = elements.learningSheetIframe?.contentDocument?.body;
-    if (!body) {
-        showToast('학습지 내용을 불러올 수 없습니다.');
-        return;
-    }
-    downloadPdfFromElement(body, `${getLearningSheetBaseName()}_학습지.pdf`);
-}
-
-function handleLearningSheetAnswerPdf() {
-    if (!lastAnswerSheetHtml) {
-        showToast('먼저 학습지를 생성해주세요. (답안지는 학습지에 대한 답입니다.)');
-        return;
-    }
-    const body = elements.learningSheetAnswerIframe?.contentDocument?.body;
-    if (!body) {
-        showToast('답안지 내용을 불러올 수 없습니다.');
-        return;
-    }
-    downloadPdfFromElement(body, `${getLearningSheetBaseName()}_답안지(학습지에대한답).pdf`);
-}
-
-function handleLearningSheetTab(e) {
-    const tab = e.target.closest('.learning-sheet-tab');
-    if (!tab?.dataset.tab) return;
-    switchLearningSheetTab(tab.dataset.tab);
-}
-
-function switchLearningSheetTab(tabId) {
-    elements.learningSheetTabs?.forEach((t) => {
-        t.classList.toggle('active', t.dataset.tab === tabId);
-        t.setAttribute('aria-selected', t.dataset.tab === tabId ? 'true' : 'false');
-    });
-    document.querySelectorAll('.learning-sheet-pane').forEach((p) => {
-        p.classList.toggle('active', (p.id === 'learning-sheet-iframe' && tabId === 'sheet') || (p.id === 'learning-sheet-answer-iframe' && tabId === 'answer'));
-    });
-}
-
-function handleLearningSheetClose() {
-    elements.learningSheetSection?.classList.add('hidden');
 }
 
 function showToast(message) {

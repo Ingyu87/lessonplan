@@ -62,6 +62,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     elements.inputs.grade?.addEventListener('change', fetchUnits);
     elements.inputs.subject?.addEventListener('change', fetchUnits);
+    elements.inputs.grade?.addEventListener('change', resetRecommendedModel);
+    elements.inputs.subject?.addEventListener('change', resetRecommendedModel);
+    elements.inputs.lesson?.addEventListener('input', resetRecommendedModel);
     // 페이지 로드 시 교과·학년 선택 → 단원 자동 로드
     setTimeout(() => {
         if (elements.inputs.subject?.value && elements.inputs.grade?.value) fetchUnits();
@@ -73,12 +76,14 @@ document.addEventListener('DOMContentLoaded', () => {
             elements.inputs.unitFallback.classList.toggle('hidden', !isDirect);
             if (isDirect) elements.inputs.unitFallback.focus();
         }
+        resetRecommendedModel();
         const sel = unitList.find(u => u.단원명 === elements.inputs.unit.value);
         if (sel?.차시수 && elements.inputs.lesson) {
             elements.inputs.lesson.max = sel.차시수;
             elements.inputs.lesson.placeholder = `1~${sel.차시수}차시`;
         }
     });
+    elements.inputs.unitFallback?.addEventListener('input', resetRecommendedModel);
 
     // 칸 클릭 시 클립보드 복사
     elements.yakanOutput?.addEventListener('click', async (e) => {
@@ -94,6 +99,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 });
+
+function resetRecommendedModel() {
+    if (elements.inputs.model) elements.inputs.model.value = '';
+}
 
 function setUnitSelectEmpty(message) {
     const sel = elements.inputs.unit;
@@ -246,6 +255,7 @@ async function handleGenerate() {
     elements.generateBtn.disabled = true;
 
     try {
+        resetRecommendedModel();
         const response = await fetch(`${API_BASE}/api/generate`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -417,7 +427,7 @@ function renderYakanFormat(data) {
 
     const target = elements.inputs.target?.value || `${elements.inputs.grade?.value || ''}학년 0반`;
     const date = elements.inputs.date?.value || '';
-    const model = (data.model || elements.inputs.model?.value || '').trim();
+    const model = (data.model || '').trim();
 
     const html = `
 <div class="yakan-document">

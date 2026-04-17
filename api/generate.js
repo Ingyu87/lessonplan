@@ -204,6 +204,40 @@ function asPlainText(value) {
     return String(value);
 }
 
+const TEACHING_MODEL_CANDIDATES = [
+    '문제해결학습',
+    '개념형성학습',
+    '발견학습',
+    '탐구학습',
+    '협동학습',
+    '프로젝트학습',
+    '직접교수',
+    '토의토론학습',
+    '역할놀이학습'
+];
+
+function pickDefaultModelBySubject(subject) {
+    const s = asPlainText(subject);
+    if (s.includes('수학')) return '문제해결학습';
+    if (s.includes('국어')) return '탐구학습';
+    if (s.includes('과학')) return '발견학습';
+    if (s.includes('사회')) return '탐구학습';
+    return '협동학습';
+}
+
+function normalizeModelField(model, subject, topic, objective) {
+    const raw = asPlainText(model).replace(/\s+/g, ' ').trim();
+    const picked = TEACHING_MODEL_CANDIDATES.find((m) => raw.includes(m)) || pickDefaultModelBySubject(subject);
+    let reason = raw;
+    if (reason.includes('-')) reason = reason.split('-').slice(1).join('-').trim();
+    if (!reason || TEACHING_MODEL_CANDIDATES.some((m) => reason === m)) {
+        const basis = asPlainText(topic || objective || '해당 차시 학습 내용');
+        reason = `${basis}에 적합한 탐구·문제 해결 중심 수업 운영이 가능하다`;
+    }
+    reason = reason.replace(/[.]+$/g, '').trim();
+    return `${picked} - ${reason}.`;
+}
+
 function normalizeToOneSentenceCoreIdea(text, contextFallback) {
     const context = asPlainText(contextFallback || '해당 차시 학습').replace(/[.?!]+$/g, '').trim();
     let cleaned = asPlainText(text)
@@ -347,7 +381,9 @@ ${coreIdeaGuideBlock}
 2. activities는 반드시 배열로 작성. 각 항목에 단계, 형태, 활동, 시간, 자료, 유의점, 평가, 교사, 학생 필드를 포함.
 3. activities 기호: 교사 열 첫 줄은 ●(검은 동그라미)로 활동 주제(예: ● 사전 지식 활성화하기, ● 활동1). 다음 줄: ○=구체적 지시, -=발문·질문. 학생=예상 반응. 자료=자료명. 유의점=지도 시 유의사항. 평가=(관찰) 등.
 4. 교수·학습 활동: 도입 1개 + 전개 3개(활동1·활동2·활동3, 실현 어려우면 2개) + 정리 1개. 전개에서 탐구질문·문제 해결을 위한 활동, 정리에서 마무리 활동을 제시.
-5. model: 해당 차시 단원에 가장 적합한 교수학습 모형을 추천하여 한 문장으로 작성.
+5. model(교수·학습 모형)은 "해당 차시를 운영하는 수업 절차 프레임"이며, 활동명이 아니라 모형명으로 선택한다.
+6. model은 반드시 아래 중 1개 모형명을 사용한다: 문제해결학습, 개념형성학습, 발견학습, 탐구학습, 협동학습, 프로젝트학습, 직접교수, 토의토론학습, 역할놀이학습.
+7. model 출력 형식은 "모형명 - 해당 차시에 맞는 적용 근거 1문장"으로 작성한다.
 
 [★★★ 교수·학습 활동 - 반드시 해당 차시에 맞게 구체화 ★★★]
 - 교과·단원·차시별 주요활동이 다르면 활동 내용이 완전히 달라야 함. 같은 템플릿을 모든 수업에 적용하지 말 것.
@@ -435,6 +471,7 @@ ${coreIdeaGuideBlock}
             data.topic,
             data.objective
         );
+        data.model = normalizeModelField(data.model, subject || '국어', data.topic, data.objective);
 
         if (data.activities && !Array.isArray(data.activities)) {
             data.activities = [{ 단계: '전개', 형태: '전체', 활동: String(data.activities), 시간: '40', 자료: '', 유의점: '', 평가: '', 교사: '◉', 학생: '◦' }];

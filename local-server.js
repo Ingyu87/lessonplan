@@ -124,6 +124,40 @@ function asPlainText(value) {
     return String(value);
 }
 
+const TEACHING_MODEL_CANDIDATES = [
+    '문제해결학습',
+    '개념형성학습',
+    '발견학습',
+    '탐구학습',
+    '협동학습',
+    '프로젝트학습',
+    '직접교수',
+    '토의토론학습',
+    '역할놀이학습'
+];
+
+function pickDefaultModelBySubject(subject) {
+    const s = asPlainText(subject);
+    if (s.includes('수학')) return '문제해결학습';
+    if (s.includes('국어')) return '탐구학습';
+    if (s.includes('과학')) return '발견학습';
+    if (s.includes('사회')) return '탐구학습';
+    return '협동학습';
+}
+
+function normalizeModelField(model, subject, topic, objective) {
+    const raw = asPlainText(model).replace(/\s+/g, ' ').trim();
+    const picked = TEACHING_MODEL_CANDIDATES.find((m) => raw.includes(m)) || pickDefaultModelBySubject(subject);
+    let reason = raw;
+    if (reason.includes('-')) reason = reason.split('-').slice(1).join('-').trim();
+    if (!reason || TEACHING_MODEL_CANDIDATES.some((m) => reason === m)) {
+        const basis = asPlainText(topic || objective || '해당 차시 학습 내용');
+        reason = `${basis}에 적합한 탐구·문제 해결 중심 수업 운영이 가능하다`;
+    }
+    reason = reason.replace(/[.]+$/g, '').trim();
+    return `${picked} - ${reason}.`;
+}
+
 function normalizeToOneSentenceCoreIdea(text, contextFallback) {
     const context = asPlainText(contextFallback || '해당 차시 학습').replace(/[.?!]+$/g, '').trim();
     let cleaned = asPlainText(text)
@@ -620,6 +654,9 @@ app.post('/api/generate', async (req, res) => {
 - coreIdea는 [원문 핵심 아이디어]와 차시별 주요 학습 내용을 바탕으로 Gemini가 재진술한 정확히 한 문장만 사용.
 - coreIdea 문장 형식: 반드시 "...은 ...이다." (한 문장, 마침표 포함).
 - coreIdea 문장에는 "핵심 아이디어/핵심아이디어"라는 단어를 쓰지 말 것.
+- model(교수·학습 모형)은 "이 차시를 운영하는 수업 절차 프레임"이다. 활동명이 아니라 모형명으로 선택할 것.
+- model은 반드시 아래 중 1개 모형명을 사용: 문제해결학습, 개념형성학습, 발견학습, 탐구학습, 협동학습, 프로젝트학습, 직접교수, 토의토론학습, 역할놀이학습.
+- model 출력 형식: "모형명 - 해당 차시에 맞는 적용 근거 1문장".
 - standard(성취기준): [이 차시에 적합한 성취기준] 섹션에서 선택. 반드시 [숫자과목코드숫자-숫자] 형식으로 시작 (예: [6수01-16], [2국01-01]). '수학6116.' 등 다른 형식 사용 금지. 코드+문장 전체를 그대로 복사.
 - objective(학습 목표): [연간지도 계획] 해당 차시 "주요 학습 내용 및 활동" 내용을 **그대로** 반영. 축약·변형·다른 내용으로 대체 금지.
 - topic(학습 주제): 차시별 주요활동 내용을 **그대로** 반영. 해당 차시와 무관한 내용 넣지 말 것.
@@ -724,6 +761,7 @@ ${refContextClean}
                 data.topic,
                 data.objective
             );
+            data.model = normalizeModelField(data.model, subject || '국어', data.topic, data.objective);
             res.status(200).json(data);
         } catch (parseError) {
             console.error('JSON 파싱 에러. 원본 텍스트:', text);

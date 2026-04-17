@@ -130,11 +130,25 @@ function getStandardsBlock(grade, subject, unitName, chasiContent) {
         const standards = JSON.parse(fs.readFileSync(standardsPath, 'utf8'));
         const g = parseInt(grade, 10);
         const gradeBand = g <= 2 ? '1~2학년' : g <= 4 ? '3~4학년' : '5~6학년';
-        let filtered = standards.filter(s => s.교과 === subject && s.학년 === gradeBand);
+        const normalizeUnitName = (v) => String(v || '')
+            .replace(/^\s*\d+\s*[.．)\]]\s*/g, '') // "5. 막대그래프" -> "막대그래프"
+            .replace(/\(\s*\d+\s*차시\s*\)/g, '') // "(10차시)" 제거
+            .replace(/\(\s*\d+\s*\)/g, '') // "(10)" 제거
+            .trim();
+
+        const gradeToken = `${g}학년`;
+        let filtered = standards.filter((s) => {
+            if (s.교과 !== subject) return false;
+            const gradeText = String(s.학년 || s.학년군 || '').trim();
+            // 데이터셋이 "4학년 1학기, 4학년 2학기" 형태이므로 해당 학년 포함 여부로 매칭
+            return gradeText.includes(gradeToken) || gradeText.includes(gradeBand);
+        });
         if (unitName && unitName.length >= 2) {
-            const u = String(unitName).trim();
+            const u = normalizeUnitName(unitName);
             const unitFiltered = filtered.filter(s => s.단원 && (
-                s.단원.includes(u) || u.includes(s.단원) || s.단원 === u || s.단원.indexOf(u) !== -1
+                normalizeUnitName(s.단원).includes(u) ||
+                u.includes(normalizeUnitName(s.단원)) ||
+                normalizeUnitName(s.단원) === u
             ));
             if (unitFiltered.length > 0) filtered = unitFiltered;
         }
@@ -317,7 +331,6 @@ function normalizeModelField(model, subject, topic, objective) {
 }
 
 function normalizeToOneSentenceCoreIdea(text, contextFallback) {
-    const context = asPlainText(contextFallback || '해당 차시 학습').replace(/[.?!]+$/g, '').trim();
     let cleaned = asPlainText(text)
         .replace(/```/g, '')
         .replace(/\s+/g, ' ')
@@ -329,22 +342,75 @@ function normalizeToOneSentenceCoreIdea(text, contextFallback) {
         .replace(/핵심아이디어/gi, '핵심 개념');
     cleaned = cleaned.split(/(?<=[.?!])\s+/)[0]?.trim() || cleaned;
     cleaned = cleaned.replace(/[.?!]+$/g, '').trim();
-    const strictForm = /^.+[은는]\s+.+이다$/;
-    if (strictForm.test(cleaned)) return `${cleaned}.`;
-    const body = cleaned.replace(/이다$/g, '').trim();
-    if (!body) return `${context}의 본질은 핵심 개념을 이해하고 적용하는 것이다.`;
-    return `${context}의 본질은 ${body}이다.`;
+    if (!cleaned) return '';
+    // '본질은 ...' 같은 선언형 문장을 강제하지 않고, AI가 생성한 개념 관계 문장을 최대한 보존
+    return cleaned.endsWith('.') ? cleaned : `${cleaned}.`;
 }
 
 function buildFallbackCoreIdeaSentence(baseCoreIdea, subject, area, chasiContent, topic, objective) {
     const leftArea = asPlainText(area);
     const leftSubject = asPlainText(subject) || '해당 교과';
     const context = asPlainText(chasiContent || topic || objective || '해당 차시 학습 내용').replace(/[.?!]+$/g, '').trim();
-    const left = leftArea ? `${leftArea} 영역 학습` : `${leftSubject} 학습`;
     const terms = extractCoreTerms(baseCoreIdea);
     const keyTerms = terms.slice(0, 2).join('와 ');
-    if (keyTerms) return `${left}의 본질은 ${context}를 통해 ${keyTerms}의 의미를 이해하고 적용하는 것이다.`;
-    return `${left}의 본질은 ${context}를 통해 해당 영역의 개념을 이해하고 적용하는 것이다.`;
+    if (keyTerms) return `${context}은 ${keyTerms}의 관계를 이해하는 학습이다.`;
+    if (leftArea) return `${context}은 ${leftArea} 영역의 개념을 적용하는 학습이다.`;
+    return `${context}은 ${leftSubject} 학습의 개념을 적용하는 학습이다.`;
+}
+
+function extractStandardTextWithoutCode(standard) {
+    return String(standard || '').replace(/^\[\d+[국수사도과실체음미영]\d+-\d+\]\s*/, '').trim();
+}
+
+function extractMeaningfulKeywords(text) {
+    const stop = new Set([
+        '자료', '수', '할', '수', '있다', '그리고', '또는', '통해', '대한', '에서', '으로', '이다'
+    ]);
+    return [...new Set(
+        String(text || '')
+            .replace(/[^\w가-힣\s]/g, ' ')
+            .split(/\s+/)
+            .map((w) => w.trim())
+            .filter((w) => w.length >= 2 && !stop.has(w))
+    )];
+}
+
+function enforceMathCoreIdea(coreIdea, standard, chasiContent) {
+    const idea = String(coreIdea || '').trim();
+    const standardText = extractStandardTextWithoutCode(standard);
+    const standardKeywords = extractMeaningfulKeywords(standardText);
+    const hasBarGraph = /막대그래프/.test(standardText) || /막대그래프/.test(chasiContent || '');
+
+    const mustHave = hasBarGraph
+        ? ['막대그래프', '자료', '해석']
+        : standardKeywords.slice(0, 3);
+
+    const isValid = idea &&
+        !/본질은/.test(idea) &&
+        mustHave.every((k) => !k || idea.includes(k));
+
+    if (isValid) return idea.endsWith('.') ? idea : `${idea}.`;
+
+    if (hasBarGraph) {
+        return '자료의 수량은 막대의 길이로 표현되고, 막대그래프는 항목별 수량을 비교하고 해석하는 데 활용된다.';
+    }
+    if (standardKeywords.length >= 2) {
+        return `${standardKeywords[0]}와 ${standardKeywords[1]}의 관계는 해당 차시의 자료를 통해 표현되고 해석된다.`;
+    }
+    return '해당 차시의 수학 개념은 자료를 통해 표현되고 비교되며 해석된다.';
+}
+
+function enforceMathQuestion(question, standard, chasiContent) {
+    const q = String(question || '').trim();
+    const standardText = extractStandardTextWithoutCode(standard);
+    const hasBarGraph = /막대그래프/.test(standardText) || /막대그래프/.test(chasiContent || '');
+    const isValid = q && q.includes('?') && !/우리 지역을 소개/.test(q) && /자료|막대그래프|비교|해석/.test(q);
+    if (isValid) return q;
+
+    if (hasBarGraph) {
+        return '수집한 자료를 막대그래프로 나타내면 어떤 항목이 가장 많고 가장 적은지, 그 이유를 어떻게 설명할 수 있을까요?';
+    }
+    return '이 차시의 자료를 어떻게 나타내고 비교하면 근거 있게 설명할 수 있을까요?';
 }
 
 async function generateRestatedCoreIdeaSentenceByAI(apiKey, options) {
@@ -574,6 +640,10 @@ ${lessonTypeActivityRule}
             data.topic,
             data.objective
         );
+        if ((subject || '').includes('수학')) {
+            data.coreIdea = enforceMathCoreIdea(data.coreIdea, data.standard, chasiContent);
+            data.question = enforceMathQuestion(data.question, data.standard, chasiContent);
+        }
         data.model = normalizeModelField(data.model, subject || '국어', data.topic, data.objective);
 
         if (data.activities && !Array.isArray(data.activities)) {

@@ -192,65 +192,76 @@ function extractCoreTerms(text) {
     return [...new Set(words)].slice(0, 12);
 }
 
-function normalizeToOneSentenceCoreIdea(text, leftPartFallback) {
-    const left = (leftPartFallback || '핵심 아이디어').replace(/[.?!]+$/g, '').trim();
-    let cleaned = String(text || '')
+function asPlainText(value) {
+    if (value == null) return '';
+    if (typeof value === 'string') return value;
+    if (Array.isArray(value)) return value.map(v => asPlainText(v)).join(' ');
+    if (typeof value === 'object') return Object.values(value).map(v => asPlainText(v)).join(' ');
+    return String(value);
+}
+
+function normalizeToOneSentenceCoreIdea(text, contextFallback) {
+    const context = asPlainText(contextFallback || '해당 차시 학습').replace(/[.?!]+$/g, '').trim();
+    let cleaned = asPlainText(text)
         .replace(/```/g, '')
         .replace(/\s+/g, ' ')
         .replace(/["']/g, '')
         .trim();
     if (!cleaned) return '';
+    cleaned = cleaned
+        .replace(/핵심\s*아이디어/gi, '핵심 개념')
+        .replace(/핵심아이디어/gi, '핵심 개념');
     cleaned = cleaned.split(/(?<=[.?!])\s+/)[0]?.trim() || cleaned;
     cleaned = cleaned.replace(/[.?!]+$/g, '').trim();
     const strictForm = /^.+[은는]\s+.+이다$/;
     if (strictForm.test(cleaned)) return `${cleaned}.`;
-    const right = cleaned
-        .replace(/^.+[은는]\s+/g, '')
-        .replace(/이다$/g, '')
-        .trim();
-    if (!right) return `${left}은 해당 차시의 핵심 개념을 적용하여 이해하는 것이다.`;
-    return `${left}은 ${right}이다.`;
+    const body = cleaned.replace(/이다$/g, '').trim();
+    if (!body) return `${context}의 본질은 핵심 개념을 이해하고 적용하는 것이다.`;
+    return `${context}의 본질은 ${body}이다.`;
 }
 
 function buildFallbackCoreIdeaSentence(baseCoreIdea, subject, area, chasiContent, topic, objective) {
-    const left = area ? `${area} 핵심 아이디어` : `${subject || '해당 교과'} 핵심 아이디어`;
+    const leftArea = asPlainText(area);
+    const leftSubject = asPlainText(subject) || '해당 교과';
+    const context = asPlainText(chasiContent || topic || objective || '해당 차시 학습 내용').replace(/[.?!]+$/g, '').trim();
+    const left = leftArea ? `${leftArea} 영역 학습` : `${leftSubject} 학습`;
     const terms = extractCoreTerms(baseCoreIdea);
     const keyTerms = terms.slice(0, 2).join('와 ');
-    const lessonPhrase = (chasiContent || topic || objective || '해당 차시 학습 내용').replace(/[.?!]+$/g, '').trim();
-    if (keyTerms) return `${left}은 ${lessonPhrase}를 통해 ${keyTerms}의 의미를 이해하고 적용하는 것이다.`;
-    return `${left}은 ${lessonPhrase}를 통해 해당 영역의 핵심 개념을 이해하고 적용하는 것이다.`;
+    if (keyTerms) return `${left}의 본질은 ${context}를 통해 ${keyTerms}의 의미를 이해하고 적용하는 것이다.`;
+    return `${left}의 본질은 ${context}를 통해 해당 영역의 개념을 이해하고 적용하는 것이다.`;
 }
 
 async function generateRestatedCoreIdeaSentenceByAI(apiKey, options) {
     const { subject, area, baseCoreIdea, chasiContent, unitName, lesson, topic, objective } = options || {};
     if (!apiKey) return '';
     if (!baseCoreIdea) return '';
-    const left = area ? `${area} 핵심 아이디어` : `${subject || '해당 교과'} 핵심 아이디어`;
+    const sentenceContext = asPlainText(chasiContent || topic || objective || `${asPlainText(area) || asPlainText(subject) || '해당 교과'} 학습`);
     const prompt = `다음 정보를 바탕으로 핵심 아이디어를 정확히 한 문장으로 재진술하세요.
 
 [영역별 원문 핵심 아이디어]
 ${baseCoreIdea}
 
 [차시 정보]
-- 단원: ${unitName || '-'}
-- 차시: ${lesson || '-'}차시
-- 차시별 주요 학습 내용: ${chasiContent || '-'}
-- 학습 주제: ${topic || '-'}
-- 학습 목표: ${objective || '-'}
+- 단원: ${asPlainText(unitName) || '-'}
+- 차시: ${asPlainText(lesson) || '-'}차시
+- 차시별 주요 학습 내용: ${asPlainText(chasiContent) || '-'}
+- 학습 주제: ${asPlainText(topic) || '-'}
+- 학습 목표: ${asPlainText(objective) || '-'}
 
 [작성 규칙]
 1) 반드시 한 문장만 작성.
-2) 반드시 "${left}은 ...이다." 형태를 지킬 것.
+2) 반드시 "...은 ...이다." 형태를 지킬 것.
 3) 원문 핵심 아이디어의 핵심 용어를 2개 이상 포함.
 4) 성취기준 코드는 넣지 말 것.
-5) 다른 설명 없이 문장만 출력.`;
+5) 문장에 "핵심 아이디어" 또는 "핵심아이디어"라는 단어를 쓰지 말 것.
+6) 다른 설명 없이 문장만 출력.`;
     try {
         const { data } = await callGeminiWithFallback(apiKey, {
             contents: [{ role: 'user', parts: [{ text: prompt }] }],
             generationConfig: { maxOutputTokens: 120 }
         });
         const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-        return normalizeToOneSentenceCoreIdea(raw, left);
+        return normalizeToOneSentenceCoreIdea(raw, sentenceContext);
     } catch (_) {
         return '';
     }
@@ -345,7 +356,8 @@ ${coreIdeaGuideBlock}
 - area: 해당 교과 교육과정의 영역 (예: 듣기·말하기, 읽기, 문학, 매체).
 - coreIdea: 영역 핵심 아이디어를 기반으로 해당 차시(단원·학습 내용)에 맞게 재진술. 성취기준 코드 넣지 말 것.
 - coreIdea는 [원문 핵심 아이디어]와 차시별 주요 학습 내용을 바탕으로 Gemini가 재진술한 정확히 한 문장만 사용.
-- coreIdea 문장 형식: 반드시 "OO은 OO이다." (한 문장, 마침표 포함).
+- coreIdea 문장 형식: 반드시 "...은 ...이다." (한 문장, 마침표 포함).
+- coreIdea 문장에는 "핵심 아이디어/핵심아이디어"라는 단어를 쓰지 말 것.
 - objective: 학습 목표 한 문장 ("~할 수 있다" 형태).
 - topic: 학습 주제 (학습 목표와 구분하여 별도).
 - evaluationPlan: 평가 계획 표. 범주(평가방법), 평가요소, 수준(상/중/하), 피드백 포함. 1~3행.

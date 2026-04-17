@@ -364,7 +364,8 @@ function extractStandardTextWithoutCode(standard) {
 
 function extractMeaningfulKeywords(text) {
     const stop = new Set([
-        '자료', '수', '할', '수', '있다', '그리고', '또는', '통해', '대한', '에서', '으로', '이다'
+        '그리고', '또는', '통해', '대한', '에서', '으로', '이다', '있다', '한다',
+        '학습', '활동', '차시', '해당', '우리', '학생', '교사', '문장', '기준'
     ]);
     return [...new Set(
         String(text || '')
@@ -373,6 +374,132 @@ function extractMeaningfulKeywords(text) {
             .map((w) => w.trim())
             .filter((w) => w.length >= 2 && !stop.has(w))
     )];
+}
+
+function buildKeywordPool({ standard, chasiContent, baseCoreIdea, area, subject }) {
+    const standardText = extractStandardTextWithoutCode(standard);
+    const list = [
+        ...extractMeaningfulKeywords(standardText),
+        ...extractMeaningfulKeywords(chasiContent),
+        ...extractMeaningfulKeywords(baseCoreIdea),
+        ...extractMeaningfulKeywords(area),
+        ...extractMeaningfulKeywords(subject)
+    ];
+    return [...new Set(list)].filter((k) => k.length >= 2).slice(0, 12);
+}
+
+function countKeywordHits(text, keywords) {
+    const src = String(text || '');
+    return keywords.filter((k) => src.includes(k)).length;
+}
+
+function isCoreIdeaAcceptable(coreIdea, keywords) {
+    const idea = String(coreIdea || '').trim();
+    if (!idea) return false;
+    if (/핵심\s*아이디어/i.test(idea)) return false;
+    if (/본질은/.test(idea)) return false;
+    if (/해당 차시의 자료를 통해 표현되고 해석된다/.test(idea)) return false;
+    const oneSentenceLike = idea.split(/[.?!]\s*/).filter(Boolean).length <= 1;
+    const neutralVerb = /(이다|한다|된다|형성된다|작용한다|나타난다|유지된다|변화한다|설명된다|해석된다|적용된다|비교된다|탐구된다|분석된다)/.test(idea);
+    const hitCount = countKeywordHits(idea, keywords);
+    return oneSentenceLike && neutralVerb && hitCount >= 2;
+}
+
+function buildFallbackCoreIdeaSentenceByKeywords({ keywords, subject, area, chasiContent }) {
+    const k1 = keywords[0] || '핵심 개념';
+    const k2 = keywords[1] || '핵심 요소';
+    const ctx = extractMeaningfulKeywords(chasiContent)[0] || extractMeaningfulKeywords(area)[0] || '';
+    if (ctx) return `${k1}와 ${k2}의 관계는 ${ctx} 활동에서 적용되고 설명된다.`;
+    const s = asPlainText(subject || '해당 교과');
+    return `${k1}와 ${k2}의 관계는 ${s} 학습에서 적용되고 설명된다.`;
+}
+
+function isQuestionAcceptable(question, keywords, subject, area) {
+    const q = String(question || '').trim();
+    if (!q) return false;
+    if (!/[?？]$/.test(q)) return false;
+    if (q.length < 10) return false;
+    const hitCount = countKeywordHits(q, keywords);
+    // 사회 영역이 아닐 때 "우리 지역 소개" 유형 문장 방지
+    const nonSocial = !(String(subject || '').includes('사회') || String(area || '').includes('지리') || String(area || '').includes('지역'));
+    if (nonSocial && /우리 지역(을|의)?\s*소개/.test(q)) return false;
+    return hitCount >= 1;
+}
+
+function buildFallbackQuestion({ keywords, subject }) {
+    const k1 = keywords[0] || '핵심 개념';
+    const k2 = keywords[1] || '핵심 요소';
+    const s = String(subject || '');
+    if (s.includes('수학')) return `${k1}와 ${k2}를 어떻게 나타내고 비교하면 근거 있게 설명할 수 있을까요?`;
+    if (s.includes('국어')) return `${k1}와 ${k2}를 바탕으로 어떤 근거를 들어 생각을 설명할 수 있을까요?`;
+    if (s.includes('과학')) return `${k1}와 ${k2}를 관찰하고 해석해 어떤 결론을 말할 수 있을까요?`;
+    if (s.includes('사회')) return `${k1}와 ${k2}를 자료로 확인하면 어떤 관계를 설명할 수 있을까요?`;
+    return `${k1}와 ${k2}를 바탕으로 무엇을 어떻게 설명할 수 있을까요?`;
+}
+
+async function regenerateCoreIdeaAndQuestionByAI(apiKey, options) {
+    const { subject, area, standard, baseCoreIdea, chasiContent, unitName, lesson, currentCoreIdea, currentQuestion } = options || {};
+    if (!apiKey) return { coreIdea: '', question: '' };
+    const standardText = extractStandardTextWithoutCode(standard);
+    const prompt = `다음 정보를 바탕으로 초등 ${asPlainText(subject)} 차시의 핵심 아이디어와 탐구 질문을 작성하세요.
+
+[성취기준]
+${asPlainText(standard)}
+
+[영역 핵심 아이디어 원문]
+${asPlainText(baseCoreIdea)}
+
+[차시 정보]
+- 영역: ${asPlainText(area)}
+- 단원: ${asPlainText(unitName)}
+- 차시: ${asPlainText(lesson)}차시
+- 주요 학습 내용: ${asPlainText(chasiContent)}
+
+[현재 결과(품질 보정 대상)]
+- 핵심 아이디어: ${asPlainText(currentCoreIdea)}
+- 탐구 질문: ${asPlainText(currentQuestion)}
+
+[핵심 아이디어 작성 원칙]
+1) 한 문장, 현재형, 중립적 동사 사용.
+2) 성취기준의 핵심 개념어 2개 이상 포함.
+3) 개념 간 관계가 드러나야 함.
+4) "본질", 가치판단, 지시문 표현 금지.
+
+[탐구 질문 작성 원칙]
+1) 학생이 답할 수 있는 한 문장 질문(물음표로 종료).
+2) 핵심 개념어를 포함하고 학습 내용과 직접 연결.
+3) 일반적 문구(예: 아무 교과나 가능한 질문) 금지.
+
+JSON으로만 답하세요:
+{"coreIdea":"...", "question":"..."}`;
+    try {
+        const { data } = await callGeminiWithFallback(apiKey, {
+            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            generationConfig: { responseMimeType: 'application/json' }
+        });
+        const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        const jsonStr = sanitizeJsonText(String(raw || '').replace(/```json/g, '').replace(/```/g, '').trim());
+        const parsed = JSON.parse(jsonStr);
+        return {
+            coreIdea: normalizeToOneSentenceCoreIdea(parsed?.coreIdea || '', chasiContent),
+            question: asPlainText(parsed?.question || '').trim()
+        };
+    } catch (_) {
+        return { coreIdea: '', question: '' };
+    }
+}
+
+function enforceCoreIdeaByStandard({ coreIdea, standard, chasiContent, baseCoreIdea, area, subject }) {
+    const keywords = buildKeywordPool({ standard, chasiContent, baseCoreIdea, area, subject });
+    const idea = normalizeToOneSentenceCoreIdea(coreIdea, chasiContent);
+    if (isCoreIdeaAcceptable(idea, keywords)) return idea;
+    return buildFallbackCoreIdeaSentenceByKeywords({ keywords, subject, area, chasiContent });
+}
+
+function enforceQuestionByStandard({ question, standard, chasiContent, baseCoreIdea, area, subject }) {
+    const keywords = buildKeywordPool({ standard, chasiContent, baseCoreIdea, area, subject });
+    if (isQuestionAcceptable(question, keywords, subject, area)) return String(question).trim();
+    return buildFallbackQuestion({ keywords, subject });
 }
 
 function enforceMathCoreIdea(coreIdea, standard, chasiContent) {
@@ -620,7 +747,11 @@ ${lessonTypeActivityRule}
                 data.coreIdea = await generateCoreIdeaByAI(apiKey, subject || '국어', data.area, resolvedUnit);
             }
         }
-        const resolvedArea = data.area || areaHint;
+        const selectedStandardRow = standardsForLookup.find((s) =>
+            String(s?.성취기준 || '').trim() === String(data.standard || '').trim()
+        );
+        if (selectedStandardRow?.영역) data.area = selectedStandardRow.영역;
+        const resolvedArea = data.area || areaHint || selectedStandardRow?.영역 || '';
         const baseCoreIdea = getCoreIdeaFromFile(subject || '국어', resolvedArea) || coreIdeaSource;
         const aiCoreIdea = await generateRestatedCoreIdeaSentenceByAI(apiKey, {
             subject: subject || '국어',
@@ -640,10 +771,65 @@ ${lessonTypeActivityRule}
             data.topic,
             data.objective
         );
-        if ((subject || '').includes('수학')) {
-            data.coreIdea = enforceMathCoreIdea(data.coreIdea, data.standard, chasiContent);
-            data.question = enforceMathQuestion(data.question, data.standard, chasiContent);
+        // 전교과 공통: 성취기준-핵심아이디어-탐구질문 정합성 강제
+        let enforcedCoreIdea = enforceCoreIdeaByStandard({
+            coreIdea: data.coreIdea,
+            standard: data.standard,
+            chasiContent,
+            baseCoreIdea,
+            area: resolvedArea,
+            subject: subject || '국어'
+        });
+        let enforcedQuestion = enforceQuestionByStandard({
+            question: data.question,
+            standard: data.standard,
+            chasiContent,
+            baseCoreIdea,
+            area: resolvedArea,
+            subject: subject || '국어'
+        });
+
+        const keywordPool = buildKeywordPool({
+            standard: data.standard,
+            chasiContent,
+            baseCoreIdea,
+            area: resolvedArea,
+            subject: subject || '국어'
+        });
+
+        // 검증 실패 시 1회 AI 재보정 후 다시 검증
+        if (!isCoreIdeaAcceptable(enforcedCoreIdea, keywordPool) || !isQuestionAcceptable(enforcedQuestion, keywordPool, subject || '국어', resolvedArea)) {
+            const repaired = await regenerateCoreIdeaAndQuestionByAI(apiKey, {
+                subject: subject || '국어',
+                area: resolvedArea,
+                standard: data.standard,
+                baseCoreIdea,
+                chasiContent,
+                unitName: resolvedUnit,
+                lesson,
+                currentCoreIdea: enforcedCoreIdea,
+                currentQuestion: enforcedQuestion
+            });
+            enforcedCoreIdea = enforceCoreIdeaByStandard({
+                coreIdea: repaired.coreIdea || enforcedCoreIdea,
+                standard: data.standard,
+                chasiContent,
+                baseCoreIdea,
+                area: resolvedArea,
+                subject: subject || '국어'
+            });
+            enforcedQuestion = enforceQuestionByStandard({
+                question: repaired.question || enforcedQuestion,
+                standard: data.standard,
+                chasiContent,
+                baseCoreIdea,
+                area: resolvedArea,
+                subject: subject || '국어'
+            });
         }
+
+        data.coreIdea = enforcedCoreIdea;
+        data.question = enforcedQuestion;
         data.model = normalizeModelField(data.model, subject || '국어', data.topic, data.objective);
 
         if (data.activities && !Array.isArray(data.activities)) {

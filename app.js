@@ -8,6 +8,8 @@ const API_BASE = (typeof window !== 'undefined' && (window.location.protocol ===
     : '';
 
 let lastGeneratedData = null;
+let generatedPlansByType = { general: null, inquiry: null };
+let activeResultTab = 'general';
 let lastLearningSheetHtml = null;
 let lastAnswerSheetHtml = null;
 let unitList = [];
@@ -66,6 +68,7 @@ const elements = {
     generateBtn: document.getElementById('generate-btn'),
     resultSection: document.getElementById('result-section'),
     yakanOutput: document.getElementById('yakan-output'),
+    resultTabs: document.querySelectorAll('.result-tab'),
     inputs: {
         grade: document.getElementById('grade'),
         semester: document.getElementById('semester'),
@@ -97,6 +100,7 @@ document.addEventListener('DOMContentLoaded', () => {
     elements.learningSheetAnswerPdf?.addEventListener('click', handleLearningSheetAnswerPdf);
     elements.learningSheetClose?.addEventListener('click', handleLearningSheetClose);
     elements.learningSheetTabs?.forEach((tab) => tab.addEventListener('click', handleLearningSheetTab));
+    elements.resultTabs?.forEach((tab) => tab.addEventListener('click', handleResultTab));
 
     elements.inputs.grade?.addEventListener('change', fetchUnits);
     elements.inputs.subject?.addEventListener('change', fetchUnits);
@@ -289,28 +293,23 @@ async function handleGenerate() {
         return;
     }
 
-    elements.generateBtn.innerText = '생성 중...';
+    elements.generateBtn.innerText = '일반형/탐구형 생성 중...';
     elements.generateBtn.disabled = true;
 
     try {
         resetRecommendedModel();
-        const response = await fetch(`${API_BASE}/api/generate`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(inputData),
-        });
-        const rawText = await response.text();
-        const parsed = parseJsonLenient(rawText);
+        const [generalPlan, inquiryPlan] = await Promise.all([
+            fetchGeneratedPlan({ ...inputData, lessonType: 'general' }),
+            fetchGeneratedPlan({ ...inputData, lessonType: 'inquiry' }),
+        ]);
 
-        if (!response.ok) {
-            const errData = parsed || {};
-            throw new Error(errData.details || errData.error || `API 호출 실패 (${response.status})`);
-        }
-
-        const result = parsed;
-        lastGeneratedData = result;
-        if (result.model && elements.inputs.model) elements.inputs.model.value = result.model;
-        renderYakanFormat(result);
+        generatedPlansByType = {
+            general: generalPlan,
+            inquiry: inquiryPlan,
+        };
+        activeResultTab = 'general';
+        syncResultTabUI();
+        renderActiveResultPlan();
 
         elements.resultSection.classList.remove('hidden');
         elements.resultSection.scrollIntoView({ behavior: 'smooth' });
@@ -326,6 +325,45 @@ async function handleGenerate() {
         elements.generateBtn.innerText = '과정안 생성 시작';
         elements.generateBtn.disabled = false;
     }
+}
+
+async function fetchGeneratedPlan(payload) {
+    const response = await fetch(`${API_BASE}/api/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+    });
+    const rawText = await response.text();
+    const parsed = parseJsonLenient(rawText);
+    if (!response.ok) {
+        const errData = parsed || {};
+        throw new Error(errData.details || errData.error || `API 호출 실패 (${response.status})`);
+    }
+    return parsed;
+}
+
+function handleResultTab(e) {
+    const tab = e.target.closest('.result-tab');
+    if (!tab?.dataset.tab) return;
+    activeResultTab = tab.dataset.tab === 'inquiry' ? 'inquiry' : 'general';
+    syncResultTabUI();
+    renderActiveResultPlan();
+}
+
+function syncResultTabUI() {
+    elements.resultTabs?.forEach((tab) => {
+        const isActive = tab.dataset.tab === activeResultTab;
+        tab.classList.toggle('active', isActive);
+        tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
+    });
+}
+
+function renderActiveResultPlan() {
+    const result = generatedPlansByType[activeResultTab] || generatedPlansByType.general || generatedPlansByType.inquiry;
+    if (!result) return;
+    lastGeneratedData = result;
+    if (result.model && elements.inputs.model) elements.inputs.model.value = result.model;
+    renderYakanFormat(result);
 }
 
 function toDisplayText(value) {
@@ -534,7 +572,8 @@ function renderYakanFormat(data) {
 }
 
 function handleDownloadPdf() {
-    if (!lastGeneratedData) {
+    const currentData = generatedPlansByType[activeResultTab] || lastGeneratedData;
+    if (!currentData) {
         showToast('먼저 과정안을 생성해주세요.');
         return;
     }
@@ -543,13 +582,15 @@ function handleDownloadPdf() {
         ? (elements.inputs.unitFallback?.value || '')
         : (elements.inputs.unit?.value || '');
     const lessonVal = elements.inputs.lesson?.value || '1';
-    const filename = `교수학습과정안_${subj}_${(unitVal || '단원').replace(/\s/g, '')}_${lessonVal}차시.pdf`;
+    const typeLabel = activeResultTab === 'inquiry' ? '개념기반탐구형' : '일반형';
+    const filename = `교수학습과정안_${typeLabel}_${subj}_${(unitVal || '단원').replace(/\s/g, '')}_${lessonVal}차시.pdf`;
     const opt = { margin: 10, filename, image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2 }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } };
     html2pdf().set(opt).from(elements.yakanOutput).save().then(() => showToast('교수학습안 PDF 다운로드되었습니다.'));
 }
 
 async function handleLearningSheet() {
-    if (!lastGeneratedData) {
+    const currentData = generatedPlansByType[activeResultTab] || lastGeneratedData;
+    if (!currentData) {
         showToast('먼저 과정안을 생성한 뒤 학습지를 만들 수 있습니다.');
         return;
     }
@@ -561,9 +602,9 @@ async function handleLearningSheet() {
         subject: elements.inputs.subject?.value,
         unitName: unitVal,
         lesson: elements.inputs.lesson?.value,
-        topic: lastGeneratedData.topic,
-        objective: lastGeneratedData.objective,
-        question: lastGeneratedData.question,
+        topic: currentData.topic,
+        objective: currentData.objective,
+        question: currentData.question,
     };
     const loadingHtml = '<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><style>body{font-family:\'Malgun Gothic\',sans-serif;display:flex;align-items:center;justify-content:center;min-height:200px;margin:0;color:#555;}</style></head><body>학습지 생성 중...</body></html>';
     elements.learningSheetIframe.srcdoc = loadingHtml;

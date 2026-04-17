@@ -2,6 +2,12 @@
 
 import path from 'path';
 import fs from 'fs';
+import { createRequire } from 'module';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const require = createRequire(import.meta.url);
+const { selectSubjectCompetencies } = require(path.join(__dirname, '../lib/subject-competency-select.cjs'));
 
 export const config = { api: { bodyParser: true } };
 
@@ -692,11 +698,12 @@ ${lessonTypeActivityRule}
 - coreIdea는 [원문 핵심 아이디어]와 차시별 주요 학습 내용을 바탕으로 Gemini가 재진술한 정확히 한 문장만 사용.
 - coreIdea 문장 형식: 반드시 "...은 ...이다." (한 문장, 마침표 포함).
 - coreIdea 문장에는 "핵심 아이디어/핵심아이디어"라는 단어를 쓰지 말 것.
+- competency: 해당 교과 **공식 교과역량 명칭으로 1~2개만**(쉼표 또는 줄바꿈으로 구분). **3개 이상 나열 금지.** 교과 전체 역량을 한 줄에 모두 적지 말 것.
 - objective: 학습 목표 한 문장 ("~할 수 있다" 형태).
 - topic: 학습 주제 (학습 목표와 구분하여 별도).
 - evaluationPlan: 평가 계획 표. 범주(평가방법), 평가요소, 수준(상/중/하), 피드백 포함. 1~3행.
 {
-  "competency": "교과 역량",
+  "competency": "해당 교과 공식 교과역량 정확한 명칭 1~2개만(나열·전부 나열 금지)",
   "area": "해당 교과 영역",
   "coreIdea": "핵심 아이디어 (영역 핵심 아이디어를 기반으로 해당 차시에 맞게 재진술)",
   "standard": "위 [성취기준] 목록에서 선택. 반드시 [숫자과목코드숫자-숫자] 형식으로 시작 (예: [6수01-16], [2국01-01]). '수학6116.' 등 다른 형식 사용 금지. 코드+문장 전체를 그대로 복사.",
@@ -831,6 +838,27 @@ ${lessonTypeActivityRule}
         data.coreIdea = enforcedCoreIdea;
         data.question = enforcedQuestion;
         data.model = normalizeModelField(data.model, subject || '국어', data.topic, data.objective);
+
+        let activitiesText = '';
+        try {
+            if (data.activities && Array.isArray(data.activities)) {
+                activitiesText = data.activities
+                    .map((a) => [a.활동, a.교사, a.학생].filter(Boolean).join(' '))
+                    .join('\n');
+            }
+        } catch (_) {}
+        data.competency = selectSubjectCompetencies(subject || '국어', {
+            standard: data.standard,
+            chasiContent,
+            area: resolvedArea,
+            objective: data.objective,
+            topic: data.topic,
+            intent: data.intent,
+            question: data.question,
+            coreIdea: data.coreIdea,
+            activitiesText,
+            rawAiCompetency: data.competency
+        });
 
         if (data.activities && !Array.isArray(data.activities)) {
             data.activities = [{ 단계: '전개', 형태: '전체', 활동: String(data.activities), 시간: '40', 자료: '', 유의점: '', 평가: '', 교사: '◉', 학생: '◦' }];

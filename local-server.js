@@ -2,6 +2,7 @@ const express = require('express');
 const dotenv = require('dotenv');
 const path = require('path');
 const fs = require('fs');
+const { selectSubjectCompetencies } = require('./lib/subject-competency-select.cjs');
 
 dotenv.config();
 
@@ -646,6 +647,12 @@ app.post('/api/generate', async (req, res) => {
         if (m === '\u2018' || m === '\u2019') return "'";
         return '"';
     });
+    const chasiContentForCompetency = (() => {
+        const m = refContext.match(/차시 주요 학습 내용 및 활동:\s*([^\n]+)/);
+        const t = (m?.[1] || '').trim();
+        return t && t !== '(없음)' ? t : '';
+    })();
+    const chasiContent = chasiContentForCompetency;
     console.log('참고 자료 로드 완료, 길이:', refContext.length);
 
     const lessonTypeLabel = resolvedLessonType === 'inquiry' ? '개념기반 탐구수업형' : '일반형';
@@ -716,7 +723,7 @@ ${lessonTypeDetailRule}
 - 교사·학생 열에 **해당 차시 학습 내용에 맞는** 구체적 자료명, 발문, 활동, 예상 반응을 작성할 것. "자료를 배부한다", "모둠별로 탐구한다" 같은 추상적 표현만 반복하지 말 것.
 - 활동 이름(활동 필드)도 차시에 맞게 구체화할 것. 예: "활동1 - 인물 관계 파악하기", "활동1 - 대화에서 생략된 내용 짐작하기", "활동1 - 합동인 도형 찾기".
 - 모든 문장은 **한국어만** 사용하세요. 영어 레이블(competency, standard 등)은 사용하지 마세요.
-- competency: 해당 교과 역량. area: 위 [성취기준]에 나온 해당 차시·단원의 영역.
+- competency: 해당 교과 **공식 교과역량 명칭으로 1~2개만**(쉼표 또는 줄바꿈). **3개 이상·전체 나열 금지.** area: 위 [성취기준]에 나온 해당 차시·단원의 영역.
 - coreIdea(핵심 아이디어): [핵심 아이디어] 참고에 해당 영역이 있으면 그걸 기반으로, 해당 차시의 학습 맥락(단원·주요 학습 내용·탐구 질문)에 맞게 재진술. 영역 핵심 아이디어는 그대로 두되, 차시에 맞게 수정·적용 가능. 성취기준 코드([4국03-02] 등) 넣지 말 것.
 - coreIdea는 [원문 핵심 아이디어]와 차시별 주요 학습 내용을 바탕으로 Gemini가 재진술한 정확히 한 문장만 사용.
 - coreIdea 문장 형식: 반드시 "...은 ...이다." (한 문장, 마침표 포함).
@@ -734,7 +741,7 @@ ${lessonTypeDetailRule}
 [출력 형식 - 순수 JSON만]
 마크다운 코드블록 없이 JSON만 반환하세요.
 {
-  "competency": "교과 역량",
+  "competency": "해당 교과 공식 교과역량 정확한 명칭 1~2개만(나열·전부 나열 금지)",
   "area": "해당 교과 교육과정의 영역 (예: 듣기·말하기, 읽기, 문학, 매체)",
   "coreIdea": "핵심 아이디어 (영역 핵심 아이디어를 기반으로 해당 차시에 맞게 재진술)",
   "standard": "위 [성취기준] 목록에서 선택. 반드시 [숫자과목코드숫자-숫자] 형식으로 시작 (예: [6수01-16], [2국01-01]). '수학6116.' 등 다른 형식 사용 금지. 코드+문장 전체를 그대로 복사.",
@@ -829,6 +836,26 @@ ${refContextClean}
                 data.objective
             );
             data.model = normalizeModelField(data.model, subject || '국어', data.topic, data.objective);
+            let activitiesText = '';
+            try {
+                if (data.activities && Array.isArray(data.activities)) {
+                    activitiesText = data.activities
+                        .map((a) => [a.활동, a.교사, a.학생].filter(Boolean).join(' '))
+                        .join('\n');
+                }
+            } catch (_) {}
+            data.competency = selectSubjectCompetencies(subject || '국어', {
+                standard: data.standard,
+                chasiContent: chasiContentForCompetency,
+                area: resolvedArea,
+                objective: data.objective,
+                topic: data.topic,
+                intent: data.intent,
+                question: data.question,
+                coreIdea: data.coreIdea,
+                activitiesText,
+                rawAiCompetency: data.competency
+            });
             res.status(200).json(data);
         } catch (parseError) {
             console.error('JSON 파싱 에러. 원본 텍스트:', text);

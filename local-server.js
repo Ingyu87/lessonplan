@@ -112,22 +112,68 @@ function extractCoreTerms(text) {
     return [...new Set(words)].slice(0, 12);
 }
 
-function includesCoreTerms(candidate, baseCoreIdea) {
-    if (!candidate || !baseCoreIdea) return false;
-    const terms = extractCoreTerms(baseCoreIdea);
-    if (terms.length === 0) return false;
-    const matched = terms.filter(t => candidate.includes(t)).length;
-    return matched >= Math.min(2, terms.length);
+function normalizeToOneSentenceCoreIdea(text, leftPartFallback) {
+    const left = (leftPartFallback || '핵심 아이디어').replace(/[.?!]+$/g, '').trim();
+    let cleaned = String(text || '')
+        .replace(/```/g, '')
+        .replace(/\s+/g, ' ')
+        .replace(/["']/g, '')
+        .trim();
+    if (!cleaned) return '';
+    cleaned = cleaned.split(/(?<=[.?!])\s+/)[0]?.trim() || cleaned;
+    cleaned = cleaned.replace(/[.?!]+$/g, '').trim();
+    const strictForm = /^.+[은는]\s+.+이다$/;
+    if (strictForm.test(cleaned)) return `${cleaned}.`;
+    const right = cleaned
+        .replace(/^.+[은는]\s+/g, '')
+        .replace(/이다$/g, '')
+        .trim();
+    if (!right) return `${left}은 해당 차시의 핵심 개념을 적용하여 이해하는 것이다.`;
+    return `${left}은 ${right}이다.`;
 }
 
-function enforceRestatedCoreIdea(baseCoreIdea, generatedCoreIdea, contextText) {
-    if (!baseCoreIdea) return generatedCoreIdea || '';
-    if (!generatedCoreIdea || !String(generatedCoreIdea).trim()) {
-        return `${baseCoreIdea} 이를 바탕으로 ${contextText} 맥락에서 핵심 개념을 적용하고 성찰하도록 한다.`;
+function buildFallbackCoreIdeaSentence(baseCoreIdea, subject, area, chasiContent, topic, objective) {
+    const left = area ? `${area} 핵심 아이디어` : `${subject || '해당 교과'} 핵심 아이디어`;
+    const terms = extractCoreTerms(baseCoreIdea);
+    const keyTerms = terms.slice(0, 2).join('와 ');
+    const lessonPhrase = (chasiContent || topic || objective || '해당 차시 학습 내용').replace(/[.?!]+$/g, '').trim();
+    if (keyTerms) return `${left}은 ${lessonPhrase}를 통해 ${keyTerms}의 의미를 이해하고 적용하는 것이다.`;
+    return `${left}은 ${lessonPhrase}를 통해 해당 영역의 핵심 개념을 이해하고 적용하는 것이다.`;
+}
+
+async function generateRestatedCoreIdeaSentenceByAI(apiKey, options) {
+    const { subject, area, baseCoreIdea, chasiContent, unitName, lesson, topic, objective } = options || {};
+    if (!apiKey) return '';
+    if (!baseCoreIdea) return '';
+    const left = area ? `${area} 핵심 아이디어` : `${subject || '해당 교과'} 핵심 아이디어`;
+    const prompt = `다음 정보를 바탕으로 핵심 아이디어를 정확히 한 문장으로 재진술하세요.
+
+[영역별 원문 핵심 아이디어]
+${baseCoreIdea}
+
+[차시 정보]
+- 단원: ${unitName || '-'}
+- 차시: ${lesson || '-'}차시
+- 차시별 주요 학습 내용: ${chasiContent || '-'}
+- 학습 주제: ${topic || '-'}
+- 학습 목표: ${objective || '-'}
+
+[작성 규칙]
+1) 반드시 한 문장만 작성.
+2) 반드시 "${left}은 ...이다." 형태를 지킬 것.
+3) 원문 핵심 아이디어의 핵심 용어를 2개 이상 포함.
+4) 성취기준 코드는 넣지 말 것.
+5) 다른 설명 없이 문장만 출력.`;
+    try {
+        const { data } = await callGeminiWithFallback(apiKey, {
+            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            generationConfig: { maxOutputTokens: 120 }
+        });
+        const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        return normalizeToOneSentenceCoreIdea(raw, left);
+    } catch (_) {
+        return '';
     }
-    const normalized = String(generatedCoreIdea).trim();
-    if (includesCoreTerms(normalized, baseCoreIdea)) return normalized;
-    return `${baseCoreIdea} 이를 바탕으로 ${contextText} 맥락에서 핵심 개념을 적용하고 성찰하도록 재진술한다.`;
 }
 
 /** 성취기준에서 해당 단원·차시의 영역 추출 (AI가 area를 비워둘 때 폴백) */
@@ -556,7 +602,8 @@ app.post('/api/generate', async (req, res) => {
 - 모든 문장은 **한국어만** 사용하세요. 영어 레이블(competency, standard 등)은 사용하지 마세요.
 - competency: 해당 교과 역량. area: 위 [성취기준]에 나온 해당 차시·단원의 영역.
 - coreIdea(핵심 아이디어): [핵심 아이디어] 참고에 해당 영역이 있으면 그걸 기반으로, 해당 차시의 학습 맥락(단원·주요 학습 내용·탐구 질문)에 맞게 재진술. 영역 핵심 아이디어는 그대로 두되, 차시에 맞게 수정·적용 가능. 성취기준 코드([4국03-02] 등) 넣지 말 것.
-- coreIdea는 [원문 핵심 아이디어]의 핵심 용어를 2개 이상 반드시 포함해야 함.
+- coreIdea는 [원문 핵심 아이디어]와 차시별 주요 학습 내용을 바탕으로 Gemini가 재진술한 정확히 한 문장만 사용.
+- coreIdea 문장 형식: 반드시 "OO은 OO이다." (한 문장, 마침표 포함).
 - standard(성취기준): [이 차시에 적합한 성취기준] 섹션에서 선택. 반드시 [숫자과목코드숫자-숫자] 형식으로 시작 (예: [6수01-16], [2국01-01]). '수학6116.' 등 다른 형식 사용 금지. 코드+문장 전체를 그대로 복사.
 - objective(학습 목표): [연간지도 계획] 해당 차시 "주요 학습 내용 및 활동" 내용을 **그대로** 반영. 축약·변형·다른 내용으로 대체 금지.
 - topic(학습 주제): 차시별 주요활동 내용을 **그대로** 반영. 해당 차시와 무관한 내용 넣지 말 것.
@@ -641,9 +688,26 @@ ${refContextClean}
                     data.coreIdea = await generateCoreIdeaByAI(apiKey, subject || '국어', data.area, resolvedUnitName);
                 }
             }
-            const baseCoreIdea = getCoreIdeaFromFile(subject || '국어', data.area || areaHint) || coreIdeaSource;
-            const coreContext = `${resolvedUnitName || '해당 단원'} ${lesson || ''}차시 ${String(data.topic || data.objective || '').slice(0, 80)}`.trim();
-            data.coreIdea = enforceRestatedCoreIdea(baseCoreIdea, data.coreIdea, coreContext);
+            const resolvedArea = data.area || areaHint;
+            const baseCoreIdea = getCoreIdeaFromFile(subject || '국어', resolvedArea) || coreIdeaSource;
+            const aiCoreIdea = await generateRestatedCoreIdeaSentenceByAI(apiKey, {
+                subject: subject || '국어',
+                area: resolvedArea,
+                baseCoreIdea,
+                chasiContent,
+                unitName: resolvedUnitName,
+                lesson,
+                topic: data.topic,
+                objective: data.objective
+            });
+            data.coreIdea = aiCoreIdea || buildFallbackCoreIdeaSentence(
+                baseCoreIdea,
+                subject || '국어',
+                resolvedArea,
+                chasiContent,
+                data.topic,
+                data.objective
+            );
             res.status(200).json(data);
         } catch (parseError) {
             console.error('JSON 파싱 에러. 원본 텍스트:', text);

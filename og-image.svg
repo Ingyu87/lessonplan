@@ -1,0 +1,27 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1200" y2="630" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F8FCFF"/>
+      <stop offset="1" stop-color="#EEF7F7"/>
+    </linearGradient>
+    <linearGradient id="teal" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#4ECDC4"/>
+      <stop offset="1" stop-color="#1A535C"/>
+    </linearGradient>
+    <linearGradient id="warm" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#FF6B6B"/>
+      <stop offset="1" stop-color="#FFE66D"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" rx="24" fill="url(#bg)"/>
+  <rect x="70" y="70" width="1060" height="490" rx="28" fill="white" stroke="#DCECF0" stroke-width="2"/>
+  <rect x="170" y="155" width="74" height="62" rx="14" fill="url(#teal)"/>
+  <rect x="335" y="155" width="74" height="62" rx="14" fill="url(#warm)"/>
+  <rect x="500" y="155" width="74" height="62" rx="14" fill="#FFE66D"/>
+  <rect x="665" y="155" width="74" height="62" rx="14" fill="url(#teal)"/>
+  <path d="M244 186H335M409 186H500M574 186H665" stroke="#9CCED1" stroke-width="5" stroke-linecap="round" stroke-dasharray="10 10"/>
+  <text x="170" y="305" fill="#FF6B6B" font-size="52" font-weight="700" font-family="'Noto Sans KR', sans-serif">2022  P!ü</text>
+  <text x="170" y="377" fill="#0E3B43" font-size="52" font-weight="700" font-family="'Noto Sans KR', sans-serif">P·Yµ üH(}H) Ý10</text>
+  <text x="170" y="450" fill="#4A6A73" font-size="32" font-weight="500" font-family="'Noto Sans KR', sans-serif">(ÜÐ Þ” Å $Ä| `tŒ ‘1X” P¬© ùq</text>
+  <text x="170" y="510" fill="#7A969E" font-size="26" font-weight="500" font-family="'Noto Sans KR', sans-serif">lessonplan-alpha.vercel.app</text>
+</svg>

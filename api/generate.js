@@ -191,6 +191,48 @@ function ensureFullStandard(standard, standardsForLookup) {
     return full || standard;
 }
 
+/**
+ * 성취기준은 반드시 원본 데이터의 "완전 일치 문장"만 허용한다.
+ * - AI가 임의 생성/변형한 문장은 허용하지 않는다.
+ * - [코드]만 반환한 경우에만 해당 코드의 원문 문장으로 치환한다.
+ * - 매칭 실패 시 fallback(원본 문장)으로 강제한다.
+ */
+function resolveStandardFromSourceOnly(standard, standardsForLookup, fallback) {
+    const fallbackText = typeof fallback === 'string' ? fallback.trim() : '';
+    const sourceList = Array.isArray(standardsForLookup) ? standardsForLookup : [];
+    const sourceTexts = sourceList
+        .map((s) => (s?.성취기준 || '').trim())
+        .filter(Boolean);
+
+    if (sourceTexts.length === 0) return fallbackText || '';
+
+    const raw = typeof standard === 'string' ? standard.trim() : '';
+    if (!raw) return fallbackText || sourceTexts[0];
+
+    // 1) 원문 완전 일치면 그대로 사용
+    if (sourceTexts.includes(raw)) return raw;
+
+    // 2) [코드]만 온 경우, 같은 코드의 원문 문장으로 보완
+    const codeOnlyMatch = raw.match(/^(\[\d+[국수사도과실체음미영]\d+-\d+\])\s*$/);
+    const codeFromOnly = codeOnlyMatch?.[1];
+    if (codeFromOnly) {
+        const foundByCodeOnly = sourceTexts.find((t) => t.startsWith(codeFromOnly));
+        if (foundByCodeOnly) return foundByCodeOnly;
+    }
+
+    // 3) 코드가 들어있으면 해당 코드의 원문 문장으로 치환
+    const codeMatch = raw.match(/(\[\d+[국수사도과실체음미영]\d+-\d+\])/);
+    const code = codeMatch?.[1];
+    if (code) {
+        const foundByCode = sourceTexts.find((t) => t.startsWith(code));
+        if (foundByCode) return foundByCode;
+    }
+
+    // 4) 어떤 경우에도 원문 목록 외 텍스트는 금지
+    if (fallbackText && sourceTexts.includes(fallbackText)) return fallbackText;
+    return sourceTexts[0];
+}
+
 /** AI가 "수학6116." 등 잘못된 형식으로 반환한 경우, 문장으로 검색해 올바른 [코드] 문장으로 교체 */
 function normalizeStandardFormat(standard, standardsForLookup) {
     if (!standard || typeof standard !== 'string' || !standardsForLookup?.length) return standard;
@@ -499,9 +541,11 @@ ${lessonTypeActivityRule}
         if (!data.standard || String(data.standard).trim() === '') {
             if (standardsFallback) data.standard = standardsFallback;
         } else if (standardsForLookup.length > 0) {
+            // 기존 보정 로직 유지 후, 마지막에 "원문 데이터 완전 일치" 강제
             data.standard = normalizeStandardFormat(data.standard, standardsForLookup);
             data.standard = ensureFullStandard(data.standard, standardsForLookup);
         }
+        data.standard = resolveStandardFromSourceOnly(data.standard, standardsForLookup, standardsFallback);
         if (!data.coreIdea || String(data.coreIdea).trim() === '') {
             const coreIdea = getCoreIdeaFromFile(subject || '국어', data.area);
             if (coreIdea) {

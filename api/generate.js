@@ -46,7 +46,43 @@ async function callGeminiWithFallback(apiKey, body, models = GENERATION_MODELS) 
 }
 
 function sanitizeJsonText(raw) {
-    return String(raw || '').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '');
+    const src = String(raw || '');
+    let out = '';
+    let inString = false;
+    let escaped = false;
+    for (let i = 0; i < src.length; i++) {
+        const ch = src[i];
+        const code = src.charCodeAt(i);
+        if (!inString) {
+            out += ch;
+            if (ch === '"') inString = true;
+            continue;
+        }
+        if (escaped) {
+            out += ch;
+            escaped = false;
+            continue;
+        }
+        if (ch === '\\') {
+            out += ch;
+            escaped = true;
+            continue;
+        }
+        if (ch === '"') {
+            out += ch;
+            inString = false;
+            continue;
+        }
+        if (code <= 0x1f || code === 0x2028 || code === 0x2029) {
+            if (ch === '\n') out += '\\n';
+            else if (ch === '\r') out += '\\r';
+            else if (ch === '\t') out += '\\t';
+            else out += '';
+            continue;
+        }
+        out += ch;
+    }
+    return out;
 }
 
 function getChasiActivity(grade, subject, unitName, lesson) {

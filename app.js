@@ -18,10 +18,48 @@ function parseJsonLenient(rawText) {
     try {
         return JSON.parse(raw);
     } catch (_) {
-        // Remove illegal control characters that occasionally break JSON parsing.
-        const sanitized = raw.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '');
-        return JSON.parse(sanitized);
+        const escaped = escapeControlCharsInJsonStrings(raw);
+        return JSON.parse(escaped);
     }
+}
+
+function escapeControlCharsInJsonStrings(raw) {
+    let out = '';
+    let inString = false;
+    let escaped = false;
+    for (let i = 0; i < raw.length; i++) {
+        const ch = raw[i];
+        const code = raw.charCodeAt(i);
+        if (!inString) {
+            out += ch;
+            if (ch === '"') inString = true;
+            continue;
+        }
+        if (escaped) {
+            out += ch;
+            escaped = false;
+            continue;
+        }
+        if (ch === '\\') {
+            out += ch;
+            escaped = true;
+            continue;
+        }
+        if (ch === '"') {
+            out += ch;
+            inString = false;
+            continue;
+        }
+        if (code <= 0x1f || code === 0x2028 || code === 0x2029) {
+            if (ch === '\n') out += '\\n';
+            else if (ch === '\r') out += '\\r';
+            else if (ch === '\t') out += '\\t';
+            else out += '';
+            continue;
+        }
+        out += ch;
+    }
+    return out;
 }
 
 const elements = {

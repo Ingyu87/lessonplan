@@ -562,15 +562,50 @@ function handleDownloadPdf() {
         showToast('먼저 과정안을 생성해주세요.');
         return;
     }
+    if (typeof html2pdf !== 'function') {
+        showToast('PDF 라이브러리를 불러오지 못했습니다. 새로고침 후 다시 시도해주세요.');
+        return;
+    }
+    if (!elements.yakanOutput || !elements.yakanOutput.innerText?.trim()) {
+        showToast('PDF로 저장할 과정안 내용이 없습니다.');
+        return;
+    }
     const subj = (elements.inputs.subject?.value || '').replace(/\s/g, '');
     const unitVal = elements.inputs.unit?.value === '__direct__'
         ? (elements.inputs.unitFallback?.value || '')
         : (elements.inputs.unit?.value || '');
     const lessonVal = elements.inputs.lesson?.value || '1';
     const typeLabel = activeResultTab === 'inquiry' ? '개념기반탐구형' : '일반형';
-    const filename = `교수학습과정안_${typeLabel}_${subj}_${(unitVal || '단원').replace(/\s/g, '')}_${lessonVal}차시.pdf`;
-    const opt = { margin: 10, filename, image: { type: 'jpeg', quality: 0.98 }, html2canvas: { scale: 2 }, jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' } };
-    html2pdf().set(opt).from(elements.yakanOutput).save().then(() => showToast('교수학습안 PDF 다운로드되었습니다.'));
+    const safeUnit = (unitVal || '단원').replace(/[\\/:*?"<>|]/g, '').replace(/\s/g, '');
+    const safeLesson = String(lessonVal).replace(/[\\/:*?"<>|]/g, '');
+    const filename = `교수학습과정안_${typeLabel}_${subj}_${safeUnit}_${safeLesson}차시.pdf`;
+    const targetEl = elements.yakanOutput;
+    const opt = {
+        margin: [8, 8, 8, 8],
+        filename,
+        image: { type: 'jpeg', quality: 0.98 },
+        html2canvas: {
+            scale: 1.6,
+            useCORS: true,
+            scrollY: 0,
+            windowWidth: Math.max(targetEl.scrollWidth, 1024),
+        },
+        pagebreak: { mode: ['css', 'legacy'] },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+    };
+    targetEl.classList.add('pdf-exporting');
+    html2pdf()
+        .set(opt)
+        .from(targetEl)
+        .save()
+        .then(() => showToast('교수학습안 PDF 다운로드되었습니다.'))
+        .catch((err) => {
+            console.error('PDF 다운로드 실패:', err);
+            showToast('PDF 생성 중 오류가 발생했습니다. 새로고침 후 다시 시도해주세요.');
+        })
+        .finally(() => {
+            targetEl.classList.remove('pdf-exporting');
+        });
 }
 
 function showToast(message) {

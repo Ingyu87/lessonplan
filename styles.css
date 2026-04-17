@@ -397,6 +397,8 @@ input::placeholder {
     padding: 0.45rem 0.6rem;
     vertical-align: top;
     cursor: pointer;
+    word-break: keep-all;
+    overflow-wrap: anywhere;
 }
 .yakan-table th:hover,
 .yakan-table td:hover {
@@ -465,6 +467,18 @@ input::placeholder {
 .yakan-table.yakan-eval th {
     width: auto;
     font-size: 0.8rem;
+}
+
+/* html2pdf 캡처 시 표/행 잘림 최소화 */
+.pdf-exporting .yakan-table {
+    page-break-inside: auto;
+}
+
+.pdf-exporting .yakan-table tr,
+.pdf-exporting .yakan-table td,
+.pdf-exporting .yakan-table th {
+    break-inside: avoid;
+    page-break-inside: avoid;
 }
 
 /* ===== 토스트 ===== */

@@ -562,7 +562,9 @@ function handleDownloadPdf() {
         showToast('먼저 과정안을 생성해주세요.');
         return;
     }
-    if (typeof html2pdf !== 'function') {
+    const canUseHtml2Canvas = typeof window.html2canvas === 'function';
+    const JsPdfCtor = window.jspdf?.jsPDF;
+    if (!canUseHtml2Canvas || !JsPdfCtor) {
         showToast('PDF 라이브러리를 불러오지 못했습니다. 새로고침 후 다시 시도해주세요.');
         return;
     }
@@ -580,25 +582,43 @@ function handleDownloadPdf() {
     const safeLesson = String(lessonVal).replace(/[\\/:*?"<>|]/g, '');
     const filename = `교수학습과정안_${typeLabel}_${subj}_${safeUnit}_${safeLesson}차시.pdf`;
     const targetEl = elements.yakanOutput;
-    const opt = {
-        margin: [8, 8, 8, 8],
-        filename,
-        image: { type: 'jpeg', quality: 0.98 },
-        html2canvas: {
-            scale: 1.6,
-            useCORS: true,
-            scrollY: 0,
-            windowWidth: Math.max(targetEl.scrollWidth, 1024),
-        },
-        pagebreak: { mode: ['css', 'legacy'] },
-        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
-    };
+    const marginMm = 8;
     targetEl.classList.add('pdf-exporting');
-    html2pdf()
-        .set(opt)
-        .from(targetEl)
-        .save()
-        .then(() => showToast('교수학습안 PDF 다운로드되었습니다.'))
+    window.html2canvas(targetEl, {
+        scale: 2,
+        useCORS: true,
+        scrollX: 0,
+        scrollY: 0,
+        windowWidth: targetEl.scrollWidth,
+        windowHeight: targetEl.scrollHeight
+    })
+        .then((canvas) => {
+            const pdf = new JsPdfCtor({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+            const pageWidth = pdf.internal.pageSize.getWidth();
+            const pageHeight = pdf.internal.pageSize.getHeight();
+            const usableWidth = pageWidth - marginMm * 2;
+            const usableHeight = pageHeight - marginMm * 2;
+
+            // 캔버스 전체를 A4 너비에 맞춰 비율 유지 후, 세로만 페이지 단위로 분할 삽입
+            const imageData = canvas.toDataURL('image/jpeg', 0.98);
+            const renderedImageHeight = (canvas.height * usableWidth) / canvas.width;
+
+            let renderedHeightLeft = renderedImageHeight;
+            let offsetY = marginMm;
+
+            pdf.addImage(imageData, 'JPEG', marginMm, offsetY, usableWidth, renderedImageHeight, undefined, 'FAST');
+            renderedHeightLeft -= usableHeight;
+
+            while (renderedHeightLeft > 0) {
+                pdf.addPage();
+                offsetY = marginMm - (renderedImageHeight - renderedHeightLeft);
+                pdf.addImage(imageData, 'JPEG', marginMm, offsetY, usableWidth, renderedImageHeight, undefined, 'FAST');
+                renderedHeightLeft -= usableHeight;
+            }
+
+            pdf.save(filename);
+            showToast('교수학습안 PDF 다운로드되었습니다.');
+        })
         .catch((err) => {
             console.error('PDF 다운로드 실패:', err);
             showToast('PDF 생성 중 오류가 발생했습니다. 새로고침 후 다시 시도해주세요.');

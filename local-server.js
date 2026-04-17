@@ -25,6 +25,43 @@ function getGradeBand(grade) {
     return '5~6학년';
 }
 
+const GENERATION_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash'];
+
+function parseGeminiErrorStatus(text) {
+    if (!text) return null;
+    const match = String(text).match(/"status"\s*:\s*"([A-Z_]+)"/);
+    return match ? match[1] : null;
+}
+
+function isRetryableGeminiStatus(httpStatus, statusText) {
+    const retryableHttp = httpStatus === 429 || httpStatus === 500 || httpStatus === 503 || httpStatus === 504;
+    const retryableApi = ['UNAVAILABLE', 'RESOURCE_EXHAUSTED', 'DEADLINE_EXCEEDED'];
+    return retryableHttp || retryableApi.includes(statusText || '');
+}
+
+async function callGeminiWithFallback(apiKey, body, models = GENERATION_MODELS) {
+    let lastError = null;
+    for (let i = 0; i < models.length; i++) {
+        const modelId = models[i];
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`;
+        const apiRes = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json; charset=utf-8' },
+            body: JSON.stringify(body)
+        });
+        if (apiRes.ok) {
+            const data = await apiRes.json();
+            return { data, modelId };
+        }
+        const errText = await apiRes.text();
+        const statusText = parseGeminiErrorStatus(errText);
+        lastError = new Error(`Gemini API ${apiRes.status} (${statusText || 'UNKNOWN'}): ${errText.substring(0, 300)}`);
+        const canRetry = isRetryableGeminiStatus(apiRes.status, statusText) && i < models.length - 1;
+        if (!canRetry) throw lastError;
+    }
+    throw lastError || new Error('Gemini API 호출 실패');
+}
+
 /** AI로 핵심 아이디어 생성 (파일에 없을 때 폴백) */
 async function generateCoreIdeaByAI(apiKey, subject, area, unitName) {
     if (!apiKey) return '';
@@ -62,6 +99,35 @@ function getCoreIdeaFromFile(subject, area) {
         ));
         return found ? (found['핵심 아이디어'] || '') : '';
     } catch (e) { return ''; }
+}
+
+function extractCoreTerms(text) {
+    if (!text || typeof text !== 'string') return [];
+    const stop = new Set(['그리고', '그러나', '또한', '위해', '통해', '한다', '하며', '있는', '있는다', '과정', '영역', '해당', '차시', '학습', '활동', '다양한', '사회', '문화적', '맥락']);
+    const words = text
+        .replace(/[^\w가-힣·⋅\s]/g, ' ')
+        .split(/\s+/)
+        .map(w => w.trim())
+        .filter(w => w.length >= 2 && !stop.has(w));
+    return [...new Set(words)].slice(0, 12);
+}
+
+function includesCoreTerms(candidate, baseCoreIdea) {
+    if (!candidate || !baseCoreIdea) return false;
+    const terms = extractCoreTerms(baseCoreIdea);
+    if (terms.length === 0) return false;
+    const matched = terms.filter(t => candidate.includes(t)).length;
+    return matched >= Math.min(2, terms.length);
+}
+
+function enforceRestatedCoreIdea(baseCoreIdea, generatedCoreIdea, contextText) {
+    if (!baseCoreIdea) return generatedCoreIdea || '';
+    if (!generatedCoreIdea || !String(generatedCoreIdea).trim()) {
+        return `${baseCoreIdea} 이를 바탕으로 ${contextText} 맥락에서 핵심 개념을 적용하고 성찰하도록 한다.`;
+    }
+    const normalized = String(generatedCoreIdea).trim();
+    if (includesCoreTerms(normalized, baseCoreIdea)) return normalized;
+    return `${baseCoreIdea} 이를 바탕으로 ${contextText} 맥락에서 핵심 개념을 적용하고 성찰하도록 재진술한다.`;
 }
 
 /** 성취기준에서 해당 단원·차시의 영역 추출 (AI가 area를 비워둘 때 폴백) */
@@ -435,8 +501,13 @@ app.post('/api/generate', async (req, res) => {
         return res.status(500).json({ error: 'API Key not configured in .env file' });
     }
 
-    const modelId = "gemini-2.5-flash";
+    const modelId = GENERATION_MODELS[0];
     const resolvedUnitName = String(unitName || unit || '').replace(/[\u201c\u201d\u2018\u2019\u2026]/g, '');
+    const areaHint = getAreaFromStandards(subject || '국어', getGradeBand(grade || '3'), resolvedUnitName);
+    const coreIdeaSource = getCoreIdeaFromFile(subject || '국어', areaHint);
+    const coreIdeaGuideBlock = coreIdeaSource
+        ? `\n[원문 핵심 아이디어 - 용어 유지 필수]\n${coreIdeaSource}\n`
+        : '';
     const refContext = loadReferenceMaterials(subject || '국어', grade || '3', resolvedUnitName, lesson);
     const refContextClean = refContext.replace(/[\u201c\u201d\u2018\u2019\u2026]/g, (m) => {
         if (m === '\u2026') return '...';
@@ -485,6 +556,7 @@ app.post('/api/generate', async (req, res) => {
 - 모든 문장은 **한국어만** 사용하세요. 영어 레이블(competency, standard 등)은 사용하지 마세요.
 - competency: 해당 교과 역량. area: 위 [성취기준]에 나온 해당 차시·단원의 영역.
 - coreIdea(핵심 아이디어): [핵심 아이디어] 참고에 해당 영역이 있으면 그걸 기반으로, 해당 차시의 학습 맥락(단원·주요 학습 내용·탐구 질문)에 맞게 재진술. 영역 핵심 아이디어는 그대로 두되, 차시에 맞게 수정·적용 가능. 성취기준 코드([4국03-02] 등) 넣지 말 것.
+- coreIdea는 [원문 핵심 아이디어]의 핵심 용어를 2개 이상 반드시 포함해야 함.
 - standard(성취기준): [이 차시에 적합한 성취기준] 섹션에서 선택. 반드시 [숫자과목코드숫자-숫자] 형식으로 시작 (예: [6수01-16], [2국01-01]). '수학6116.' 등 다른 형식 사용 금지. 코드+문장 전체를 그대로 복사.
 - objective(학습 목표): [연간지도 계획] 해당 차시 "주요 학습 내용 및 활동" 내용을 **그대로** 반영. 축약·변형·다른 내용으로 대체 금지.
 - topic(학습 주제): 차시별 주요활동 내용을 **그대로** 반영. 해당 차시와 무관한 내용 넣지 말 것.
@@ -523,29 +595,20 @@ activities 필드별 역할 및 기호(반드시 지킬 것):
 - 교사=주요 활동+발문. 자료=자료명. 유의점=지도 시 유의사항. 평가=(관찰) 등. 서로 섞지 말 것.
 
 [참고 자료 - 반드시 반영]
+${coreIdeaGuideBlock}
 ${refContextClean}
 `;
 
     try {
         console.log(`Gemini REST API 호출 중... (모델: ${modelId})`);
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${apiKey}`;
         const body = {
             contents: [{ role: 'user', parts: [{ text: systemPrompt }] }],
             generationConfig: { responseMimeType: 'application/json' }
         };
-        const apiRes = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json; charset=utf-8' },
-            body: JSON.stringify(body)
-        });
-        if (!apiRes.ok) {
-            const errText = await apiRes.text();
-            throw new Error(`Gemini API ${apiRes.status}: ${errText.substring(0, 200)}`);
-        }
-        const apiData = await apiRes.json();
+        const { data: apiData, modelId: usedModelId } = await callGeminiWithFallback(apiKey, body);
         const text = apiData?.candidates?.[0]?.content?.parts?.[0]?.text || '';
         if (!text) throw new Error('AI 응답이 비어 있습니다.');
-        console.log('AI 응답 수신 성공:', text.substring(0, 100) + '...');
+        console.log(`AI 응답 수신 성공(모델: ${usedModelId}):`, text.substring(0, 100) + '...');
 
         const jsonStr = text.replace(/```json/g, '').replace(/```/g, '').trim();
         try {
@@ -578,6 +641,9 @@ ${refContextClean}
                     data.coreIdea = await generateCoreIdeaByAI(apiKey, subject || '국어', data.area, resolvedUnitName);
                 }
             }
+            const baseCoreIdea = getCoreIdeaFromFile(subject || '국어', data.area || areaHint) || coreIdeaSource;
+            const coreContext = `${resolvedUnitName || '해당 단원'} ${lesson || ''}차시 ${String(data.topic || data.objective || '').slice(0, 80)}`.trim();
+            data.coreIdea = enforceRestatedCoreIdea(baseCoreIdea, data.coreIdea, coreContext);
             res.status(200).json(data);
         } catch (parseError) {
             console.error('JSON 파싱 에러. 원본 텍스트:', text);
@@ -585,9 +651,12 @@ ${refContextClean}
         }
     } catch (error) {
         console.error('서버 에러 상세:', error);
+        const isOverloaded = /UNAVAILABLE|RESOURCE_EXHAUSTED|503|overloaded|high demand/i.test(error?.message || '');
         res.status(500).json({
             error: 'AI 생성 실패',
-            details: error.message,
+            details: isOverloaded
+                ? 'Gemini 모델이 현재 과부하 상태입니다. 잠시 후 다시 시도하거나 입력 내용을 간단히 줄여 다시 생성해 주세요.'
+                : error.message,
             stack: error.stack
         });
     }
@@ -630,18 +699,11 @@ app.post('/api/learning-sheet', async (req, res) => {
 
 위 내용에 맞는 답안지 HTML을 **그대로** 출력하세요.`;
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
     const callGemini = async (promptText) => {
-        const apiRes = await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json; charset=utf-8' },
-            body: JSON.stringify({
-                contents: [{ role: 'user', parts: [{ text: promptText }] }],
-                generationConfig: { maxOutputTokens: 4096 }
-            })
+        const { data: apiData } = await callGeminiWithFallback(apiKey, {
+            contents: [{ role: 'user', parts: [{ text: promptText }] }],
+            generationConfig: { maxOutputTokens: 4096 }
         });
-        if (!apiRes.ok) throw new Error(`Gemini ${apiRes.status}`);
-        const apiData = await apiRes.json();
         let t = apiData?.candidates?.[0]?.content?.parts?.[0]?.text || '';
         return t.trim();
     };

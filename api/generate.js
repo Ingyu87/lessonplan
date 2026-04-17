@@ -5,6 +5,46 @@ import fs from 'fs';
 
 export const config = { api: { bodyParser: true } };
 
+const GENERATION_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash'];
+
+function parseGeminiErrorStatus(text) {
+    if (!text) return null;
+    const match = String(text).match(/"status"\s*:\s*"([A-Z_]+)"/);
+    return match ? match[1] : null;
+}
+
+function isRetryableGeminiStatus(httpStatus, statusText) {
+    const retryableHttp = httpStatus === 429 || httpStatus === 500 || httpStatus === 503 || httpStatus === 504;
+    const retryableApi = ['UNAVAILABLE', 'RESOURCE_EXHAUSTED', 'DEADLINE_EXCEEDED'];
+    return retryableHttp || retryableApi.includes(statusText || '');
+}
+
+async function callGeminiWithFallback(apiKey, body, models = GENERATION_MODELS) {
+    let lastError = null;
+    for (let i = 0; i < models.length; i++) {
+        const modelId = models[i];
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent`;
+        const apiRes = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json; charset=utf-8',
+                'x-goog-api-key': apiKey
+            },
+            body: JSON.stringify(body)
+        });
+        if (apiRes.ok) {
+            const data = await apiRes.json();
+            return { data, modelId };
+        }
+        const errText = await apiRes.text();
+        const statusText = parseGeminiErrorStatus(errText);
+        lastError = new Error(`Gemini API ${apiRes.status} (${statusText || 'UNKNOWN'}): ${errText.substring(0, 300)}`);
+        const canRetry = isRetryableGeminiStatus(apiRes.status, statusText) && i < models.length - 1;
+        if (!canRetry) throw lastError;
+    }
+    throw lastError || new Error('Gemini API 호출 실패');
+}
+
 function getChasiActivity(grade, subject, unitName, lesson) {
     try {
         const planPath = path.join(process.cwd(), '연간지도_계획.json');
@@ -141,6 +181,35 @@ function getCoreIdeaFromFile(subject, area) {
     } catch (e) { return ''; }
 }
 
+function extractCoreTerms(text) {
+    if (!text || typeof text !== 'string') return [];
+    const stop = new Set(['그리고', '그러나', '또한', '위해', '통해', '한다', '하며', '있는', '과정', '영역', '해당', '차시', '학습', '활동', '다양한', '사회', '문화적', '맥락']);
+    const words = text
+        .replace(/[^\w가-힣·⋅\s]/g, ' ')
+        .split(/\s+/)
+        .map(w => w.trim())
+        .filter(w => w.length >= 2 && !stop.has(w));
+    return [...new Set(words)].slice(0, 12);
+}
+
+function includesCoreTerms(candidate, baseCoreIdea) {
+    if (!candidate || !baseCoreIdea) return false;
+    const terms = extractCoreTerms(baseCoreIdea);
+    if (terms.length === 0) return false;
+    const matched = terms.filter(t => candidate.includes(t)).length;
+    return matched >= Math.min(2, terms.length);
+}
+
+function enforceRestatedCoreIdea(baseCoreIdea, generatedCoreIdea, contextText) {
+    if (!baseCoreIdea) return generatedCoreIdea || '';
+    if (!generatedCoreIdea || !String(generatedCoreIdea).trim()) {
+        return `${baseCoreIdea} 이를 바탕으로 ${contextText} 맥락에서 핵심 개념을 적용하고 성찰하도록 한다.`;
+    }
+    const normalized = String(generatedCoreIdea).trim();
+    if (includesCoreTerms(normalized, baseCoreIdea)) return normalized;
+    return `${baseCoreIdea} 이를 바탕으로 ${contextText} 맥락에서 핵심 개념을 적용하고 성찰하도록 재진술한다.`;
+}
+
 async function generateCoreIdeaByAI(apiKey, subject, area, unitName) {
     if (!apiKey) return '';
     try {
@@ -185,8 +254,13 @@ export default async function handler(req, res) {
         : `\n[참고] 연간지도 계획에서 이 단원·차시에 해당하는 "차시별 주요 활동"을 찾지 못했습니다. 선택한 단원(${resolvedUnit})과 ${lesson}차시에 맞게, 해당 교과 성취기준과 연계하여 학습 주제·목표와 활동을 작성하세요.\n`;
 
     const { block: standardsBlock, fallback: standardsFallback, standardsForLookup } = getStandardsBlock(grade, subject || '국어', resolvedUnit, chasiContent);
+    const areaHint = standardsForLookup.find(s => s.영역)?.영역 || '';
+    const coreIdeaSource = getCoreIdeaFromFile(subject || '국어', areaHint);
+    const coreIdeaGuideBlock = coreIdeaSource
+        ? `\n[원문 핵심 아이디어 - 용어 유지 필수]\n${coreIdeaSource}\n`
+        : '';
 
-    const modelId = "gemini-2.5-flash";
+    const modelId = GENERATION_MODELS[0];
     const systemPrompt = `
 당신은 2022 개정 교육과정에 정통한 초등학교 수업 설계 전문가입니다.
 2022 개정 교육과정 가이드라인을 준수하여 교수학습 과정안(약안) 초안을 작성하세요.
@@ -201,6 +275,7 @@ export default async function handler(req, res) {
 (요약: objective·topic·전개 활동은 모두 [이 차시의 핵심] 블록의 "주요 학습 내용 및 활동"과 일치해야 함.)
 ${chasiBlock}
 ${standardsBlock}
+${coreIdeaGuideBlock}
 [입력 정보]
 - 학년: ${grade}학년, 학기: ${semester}학기, 교과: ${subject}
 - 단원: ${resolvedUnit}
@@ -223,6 +298,7 @@ ${standardsBlock}
 마크다운 없이 JSON만 반환하세요.
 - area: 해당 교과 교육과정의 영역 (예: 듣기·말하기, 읽기, 문학, 매체).
 - coreIdea: 영역 핵심 아이디어를 기반으로 해당 차시(단원·학습 내용)에 맞게 재진술. 성취기준 코드 넣지 말 것.
+- coreIdea는 [원문 핵심 아이디어]의 핵심 용어를 2개 이상 반드시 포함할 것.
 - objective: 학습 목표 한 문장 ("~할 수 있다" 형태).
 - topic: 학습 주제 (학습 목표와 구분하여 별도).
 - evaluationPlan: 평가 계획 표. 범주(평가방법), 평가요소, 수준(상/중/하), 피드백 포함. 1~3행.
@@ -251,24 +327,11 @@ ${standardsBlock}
 `;
 
     try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent`;
         const body = {
             contents: [{ role: 'user', parts: [{ text: systemPrompt }] }],
             generationConfig: { responseMimeType: 'application/json' }
         };
-        const apiRes = await fetch(url, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json; charset=utf-8',
-                'x-goog-api-key': apiKey
-            },
-            body: JSON.stringify(body)
-        });
-        if (!apiRes.ok) {
-            const errText = await apiRes.text();
-            throw new Error(`Gemini API ${apiRes.status}: ${errText.substring(0, 200)}`);
-        }
-        const apiData = await apiRes.json();
+        const { data: apiData } = await callGeminiWithFallback(apiKey, body);
         const text = apiData?.candidates?.[0]?.content?.parts?.[0]?.text || '';
         if (!text) throw new Error('AI 응답이 비어 있습니다.');
 
@@ -289,6 +352,9 @@ ${standardsBlock}
                 data.coreIdea = await generateCoreIdeaByAI(apiKey, subject || '국어', data.area, resolvedUnit);
             }
         }
+        const baseCoreIdea = getCoreIdeaFromFile(subject || '국어', data.area || areaHint) || coreIdeaSource;
+        const coreContext = `${resolvedUnit || '해당 단원'} ${lesson || ''}차시 ${String(data.topic || data.objective || '').slice(0, 80)}`.trim();
+        data.coreIdea = enforceRestatedCoreIdea(baseCoreIdea, data.coreIdea, coreContext);
 
         if (data.activities && !Array.isArray(data.activities)) {
             data.activities = [{ 단계: '전개', 형태: '전체', 활동: String(data.activities), 시간: '40', 자료: '', 유의점: '', 평가: '', 교사: '◉', 학생: '◦' }];
@@ -298,9 +364,12 @@ ${standardsBlock}
     } catch (error) {
         console.error('AI generate error:', error);
         const msg = error?.message || 'AI 생성 실패';
+        const isOverloaded = /UNAVAILABLE|RESOURCE_EXHAUSTED|503|overloaded|high demand/i.test(msg);
         res.status(500).json({
             error: 'AI 생성 실패',
-            details: msg,
+            details: isOverloaded
+                ? 'Gemini 모델이 현재 과부하 상태입니다. 잠시 후 다시 시도해 주세요.'
+                : msg,
         });
     }
 }

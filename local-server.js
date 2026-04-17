@@ -62,6 +62,10 @@ async function callGeminiWithFallback(apiKey, body, models = GENERATION_MODELS) 
     throw lastError || new Error('Gemini API 호출 실패');
 }
 
+function sanitizeJsonText(raw) {
+    return String(raw || '').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '');
+}
+
 /** AI로 핵심 아이디어 생성 (파일에 없을 때 폴백) */
 async function generateCoreIdeaByAI(apiKey, subject, area, unitName) {
     if (!apiKey) return '';
@@ -669,7 +673,7 @@ ${refContextClean}
         if (!text) throw new Error('AI 응답이 비어 있습니다.');
         console.log(`AI 응답 수신 성공(모델: ${usedModelId}):`, text.substring(0, 100) + '...');
 
-        const jsonStr = text.replace(/```json/g, '').replace(/```/g, '').trim();
+        const jsonStr = sanitizeJsonText(text.replace(/```json/g, '').replace(/```/g, '').trim());
         try {
             const data = JSON.parse(jsonStr);
             if (data.standard && String(data.standard).trim() !== '') {

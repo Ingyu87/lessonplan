@@ -45,6 +45,10 @@ async function callGeminiWithFallback(apiKey, body, models = GENERATION_MODELS) 
     throw lastError || new Error('Gemini API 호출 실패');
 }
 
+function sanitizeJsonText(raw) {
+    return String(raw || '').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '');
+}
+
 function getChasiActivity(grade, subject, unitName, lesson) {
     try {
         const planPath = path.join(process.cwd(), '연간지도_계획.json');
@@ -394,7 +398,7 @@ ${coreIdeaGuideBlock}
         const text = apiData?.candidates?.[0]?.content?.parts?.[0]?.text || '';
         if (!text) throw new Error('AI 응답이 비어 있습니다.');
 
-        const jsonStr = text.replace(/```json/g, '').replace(/```/g, '').trim();
+        const jsonStr = sanitizeJsonText(text.replace(/```json/g, '').replace(/```/g, '').trim());
         const data = JSON.parse(jsonStr);
 
         if (!data.standard || String(data.standard).trim() === '') {

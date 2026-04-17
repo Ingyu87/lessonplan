@@ -13,6 +13,17 @@ let lastAnswerSheetHtml = null;
 let unitList = [];
 let unitsFetchController = null;
 
+function parseJsonLenient(rawText) {
+    const raw = String(rawText || '');
+    try {
+        return JSON.parse(raw);
+    } catch (_) {
+        // Remove illegal control characters that occasionally break JSON parsing.
+        const sanitized = raw.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '');
+        return JSON.parse(sanitized);
+    }
+}
+
 const elements = {
     generateBtn: document.getElementById('generate-btn'),
     resultSection: document.getElementById('result-section'),
@@ -240,13 +251,15 @@ async function handleGenerate() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(inputData),
         });
+        const rawText = await response.text();
+        const parsed = parseJsonLenient(rawText);
 
         if (!response.ok) {
-            const errData = await response.json().catch(() => ({}));
+            const errData = parsed || {};
             throw new Error(errData.details || errData.error || `API 호출 실패 (${response.status})`);
         }
 
-        const result = await response.json();
+        const result = parsed;
         lastGeneratedData = result;
         if (result.model && elements.inputs.model) elements.inputs.model.value = result.model;
         renderYakanFormat(result);

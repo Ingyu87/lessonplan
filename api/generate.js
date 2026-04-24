@@ -344,8 +344,13 @@ function normalizeToOneSentenceCoreIdea(text, contextFallback) {
     cleaned = cleaned.split(/(?<=[.?!])\s+/)[0]?.trim() || cleaned;
     cleaned = cleaned.replace(/[.?!]+$/g, '').trim();
     if (!cleaned) return '';
-    // '본질은 ...' 같은 선언형 문장을 강제하지 않고, AI가 생성한 개념 관계 문장을 최대한 보존
-    return cleaned.endsWith('.') ? cleaned : `${cleaned}.`;
+    const strictForm = /^.+[은는]\s+.+이다$/;
+    if (strictForm.test(cleaned)) return `${cleaned}.`;
+    const body = cleaned.replace(/이다$/g, '').trim();
+    if (!body) return '';
+    const left = asPlainText(contextFallback || '해당 차시 학습 내용').replace(/[.?!]+$/g, '').trim();
+    const subject = left || '해당 차시 학습 내용';
+    return `${subject}은 ${body}이다.`;
 }
 
 function buildFallbackCoreIdeaSentence(baseCoreIdea, subject, area, chasiContent, topic, objective) {
@@ -400,19 +405,19 @@ function isCoreIdeaAcceptable(coreIdea, keywords) {
     if (/핵심\s*아이디어/i.test(idea)) return false;
     if (/본질은/.test(idea)) return false;
     if (/해당 차시의 자료를 통해 표현되고 해석된다/.test(idea)) return false;
+    if (!/^.+[은는]\s+.+이다[.]?$/.test(idea)) return false;
     const oneSentenceLike = idea.split(/[.?!]\s*/).filter(Boolean).length <= 1;
-    const neutralVerb = /(이다|한다|된다|형성된다|작용한다|나타난다|유지된다|변화한다|설명된다|해석된다|적용된다|비교된다|탐구된다|분석된다)/.test(idea);
     const hitCount = countKeywordHits(idea, keywords);
-    return oneSentenceLike && neutralVerb && hitCount >= 2;
+    return oneSentenceLike && hitCount >= 2;
 }
 
 function buildFallbackCoreIdeaSentenceByKeywords({ keywords, subject, area, chasiContent }) {
     const k1 = keywords[0] || '핵심 개념';
     const k2 = keywords[1] || '핵심 요소';
     const ctx = extractMeaningfulKeywords(chasiContent)[0] || extractMeaningfulKeywords(area)[0] || '';
-    if (ctx) return `${k1}와 ${k2}의 관계는 ${ctx} 활동에서 적용되고 설명된다.`;
+    if (ctx) return `${ctx} 활동은 ${k1}와 ${k2}의 관계를 이해하는 학습이다.`;
     const s = asPlainText(subject || '해당 교과');
-    return `${k1}와 ${k2}의 관계는 ${s} 학습에서 적용되고 설명된다.`;
+    return `${s} 학습은 ${k1}와 ${k2}의 관계를 이해하는 학습이다.`;
 }
 
 function isQuestionAcceptable(question, keywords, subject, area) {
@@ -755,24 +760,38 @@ ${lessonTypeActivityRule}
         if (selectedStandardRow?.영역) data.area = selectedStandardRow.영역;
         const resolvedArea = data.area || areaHint || selectedStandardRow?.영역 || '';
         const baseCoreIdea = getCoreIdeaFromFile(subject || '국어', resolvedArea) || coreIdeaSource;
-        const aiCoreIdea = await generateRestatedCoreIdeaSentenceByAI(apiKey, {
-            subject: subject || '국어',
-            area: resolvedArea,
-            baseCoreIdea,
-            chasiContent,
-            unitName: resolvedUnit,
-            lesson,
-            topic: data.topic,
-            objective: data.objective
-        });
-        data.coreIdea = aiCoreIdea || buildFallbackCoreIdeaSentence(
-            baseCoreIdea,
-            subject || '국어',
-            resolvedArea,
-            chasiContent,
-            data.topic,
-            data.objective
+        const initialCoreIdea = normalizeToOneSentenceCoreIdea(
+            data.coreIdea || '',
+            chasiContent || data.topic || data.objective
         );
+        let preparedCoreIdea = initialCoreIdea;
+        if (!isCoreIdeaAcceptable(preparedCoreIdea, buildKeywordPool({
+            standard: data.standard,
+            chasiContent,
+            baseCoreIdea,
+            area: resolvedArea,
+            subject: subject || '국어'
+        }))) {
+            const aiCoreIdea = await generateRestatedCoreIdeaSentenceByAI(apiKey, {
+                subject: subject || '국어',
+                area: resolvedArea,
+                baseCoreIdea,
+                chasiContent,
+                unitName: resolvedUnit,
+                lesson,
+                topic: data.topic,
+                objective: data.objective
+            });
+            preparedCoreIdea = aiCoreIdea || buildFallbackCoreIdeaSentence(
+                baseCoreIdea,
+                subject || '국어',
+                resolvedArea,
+                chasiContent,
+                data.topic,
+                data.objective
+            );
+        }
+        data.coreIdea = preparedCoreIdea;
         // 전교과 공통: 성취기준-핵심아이디어-탐구질문 정합성 강제
         let enforcedCoreIdea = enforceCoreIdeaByStandard({
             coreIdea: data.coreIdea,

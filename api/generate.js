@@ -8,6 +8,8 @@ const config = { api: { bodyParser: true } };
 
 const GENERATION_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash'];
 const jsonCache = new Map();
+const GEMINI_RETRY_MAX = 2;
+const GEMINI_RETRY_BASE_MS = 700;
 
 function readJsonCached(filePath) {
     try {
@@ -29,6 +31,10 @@ function parseGeminiErrorStatus(text) {
     return match ? match[1] : null;
 }
 
+function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function isRetryableGeminiStatus(httpStatus, statusText) {
     const retryableHttp = httpStatus === 429 || httpStatus === 500 || httpStatus === 503 || httpStatus === 504;
     const retryableApi = ['UNAVAILABLE', 'RESOURCE_EXHAUSTED', 'DEADLINE_EXCEEDED'];
@@ -40,23 +46,37 @@ async function callGeminiWithFallback(apiKey, body, models = GENERATION_MODELS) 
     for (let i = 0; i < models.length; i++) {
         const modelId = models[i];
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent`;
-        const apiRes = await fetch(url, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json; charset=utf-8',
-                'x-goog-api-key': apiKey
-            },
-            body: JSON.stringify(body)
-        });
-        if (apiRes.ok) {
-            const data = await apiRes.json();
-            return { data, modelId };
+        for (let attempt = 0; attempt <= GEMINI_RETRY_MAX; attempt++) {
+            try {
+                const apiRes = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json; charset=utf-8',
+                        'x-goog-api-key': apiKey
+                    },
+                    body: JSON.stringify(body)
+                });
+                if (apiRes.ok) {
+                    const data = await apiRes.json();
+                    return { data, modelId };
+                }
+                const errText = await apiRes.text();
+                const statusText = parseGeminiErrorStatus(errText);
+                lastError = new Error(`Gemini API ${apiRes.status} (${statusText || 'UNKNOWN'}): ${errText.substring(0, 300)}`);
+                const canRetrySameModel = isRetryableGeminiStatus(apiRes.status, statusText) && attempt < GEMINI_RETRY_MAX;
+                if (canRetrySameModel) {
+                    await sleep(GEMINI_RETRY_BASE_MS * (attempt + 1));
+                    continue;
+                }
+                break;
+            } catch (networkError) {
+                lastError = networkError instanceof Error ? networkError : new Error('Gemini 네트워크 오류');
+                if (attempt >= GEMINI_RETRY_MAX) break;
+                await sleep(GEMINI_RETRY_BASE_MS * (attempt + 1));
+            }
         }
-        const errText = await apiRes.text();
-        const statusText = parseGeminiErrorStatus(errText);
-        lastError = new Error(`Gemini API ${apiRes.status} (${statusText || 'UNKNOWN'}): ${errText.substring(0, 300)}`);
-        const canRetry = isRetryableGeminiStatus(apiRes.status, statusText) && i < models.length - 1;
-        if (!canRetry) throw lastError;
+        const canTryNextModel = i < models.length - 1;
+        if (!canTryNextModel) throw lastError || new Error('Gemini API 호출 실패');
     }
     throw lastError || new Error('Gemini API 호출 실패');
 }

@@ -6,6 +6,8 @@
 const API_BASE = (typeof window !== 'undefined' && (window.location.protocol === 'file:' || !window.location.origin))
     ? 'http://localhost:3000'
     : '';
+const GENERATE_RETRY_MAX = 2;
+const GENERATE_RETRY_BASE_MS = 800;
 
 let lastGeneratedData = null;
 let generatedPlansByType = { general: null, inquiry: null };
@@ -283,27 +285,14 @@ async function handleGenerate() {
 
     try {
         resetRecommendedModel();
-        const results = await Promise.allSettled([
-            fetchGeneratedPlan({ ...inputData, lessonType: 'general' }),
-            fetchGeneratedPlan({ ...inputData, lessonType: 'inquiry' }),
+        const [generalPlan, inquiryPlan] = await Promise.all([
+            fetchGeneratedPlanWithRetry({ ...inputData, lessonType: 'general' }, '일반형'),
+            fetchGeneratedPlanWithRetry({ ...inputData, lessonType: 'inquiry' }, '탐구형'),
         ]);
-        const generalResult = results[0];
-        const inquiryResult = results[1];
-        const generalPlan = generalResult.status === 'fulfilled' ? generalResult.value : null;
-        const inquiryPlan = inquiryResult.status === 'fulfilled' ? inquiryResult.value : null;
-        if (!generalPlan && !inquiryPlan) {
-            const firstError = (generalResult.status === 'rejected' ? generalResult.reason : inquiryResult.reason);
-            throw firstError || new Error('일반형/탐구형 생성이 모두 실패했습니다.');
-        }
-
         generatedPlansByType = { general: generalPlan, inquiry: inquiryPlan };
-        activeResultTab = generalPlan ? 'general' : 'inquiry';
+        activeResultTab = 'general';
         syncResultTabUI();
         renderActiveResultPlan();
-        if (!generalPlan || !inquiryPlan) {
-            const missingType = !generalPlan ? '일반형' : '탐구형';
-            showToast(`${missingType} 생성은 실패하여 성공한 결과만 표시합니다.`);
-        }
 
         elements.resultSection.classList.remove('hidden');
         elements.resultSection.scrollIntoView({ behavior: 'smooth' });
@@ -319,6 +308,32 @@ async function handleGenerate() {
         elements.generateBtn.innerText = '과정안 생성 시작';
         elements.generateBtn.disabled = false;
     }
+}
+
+function delay(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetryableGenerateError(message) {
+    const msg = String(message || '');
+    return /429|500|502|503|504|timeout|network|Failed to fetch|NetworkError|ERR_CONNECTION|과부하|일시적/i.test(msg);
+}
+
+async function fetchGeneratedPlanWithRetry(payload, label) {
+    let lastError = null;
+    for (let attempt = 0; attempt <= GENERATE_RETRY_MAX; attempt++) {
+        try {
+            return await fetchGeneratedPlan(payload);
+        } catch (error) {
+            lastError = error;
+            const canRetry = attempt < GENERATE_RETRY_MAX && isRetryableGenerateError(error?.message);
+            if (!canRetry) break;
+            const waitMs = GENERATE_RETRY_BASE_MS * (attempt + 1);
+            showToast(`${label} 생성 재시도 중... (${attempt + 1}/${GENERATE_RETRY_MAX})`);
+            await delay(waitMs);
+        }
+    }
+    throw lastError || new Error(`${label} 생성 실패`);
 }
 
 async function fetchGeneratedPlan(payload) {

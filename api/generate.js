@@ -7,6 +7,21 @@ const { selectSubjectCompetencies } = require(path.join(__dirname, '../lib/subje
 const config = { api: { bodyParser: true } };
 
 const GENERATION_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash'];
+const jsonCache = new Map();
+
+function readJsonCached(filePath) {
+    try {
+        const stat = fs.statSync(filePath);
+        const mtimeMs = stat.mtimeMs;
+        const cached = jsonCache.get(filePath);
+        if (cached && cached.mtimeMs === mtimeMs) return cached.data;
+        const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+        jsonCache.set(filePath, { mtimeMs, data: parsed });
+        return parsed;
+    } catch (_) {
+        return null;
+    }
+}
 
 function parseGeminiErrorStatus(text) {
     if (!text) return null;
@@ -90,7 +105,8 @@ function getChasiActivity(grade, subject, unitName, lesson) {
     try {
         const planPath = path.join(process.cwd(), '연간지도_계획.json');
         if (!fs.existsSync(planPath)) return '';
-        const annualPlan = JSON.parse(fs.readFileSync(planPath, 'utf8'));
+        const annualPlan = readJsonCached(planPath);
+        if (!Array.isArray(annualPlan)) return '';
         const gradeStr = String(grade);
         const g = parseInt(grade, 10);
         const gradeBand = g <= 2 ? '1~2학년' : g <= 4 ? '3~4학년' : '5~6학년';
@@ -128,7 +144,8 @@ function getStandardsBlock(grade, subject, unitName, chasiContent) {
     try {
         const standardsPath = path.join(process.cwd(), '2022개정교육과정 성취기준 및 해설.json');
         if (!fs.existsSync(standardsPath)) return { block: '', fallback: '' };
-        const standards = JSON.parse(fs.readFileSync(standardsPath, 'utf8'));
+        const standards = readJsonCached(standardsPath);
+        if (!Array.isArray(standards)) return { block: '', fallback: '', standardsForLookup: [] };
         const g = parseInt(grade, 10);
         const gradeBand = g <= 2 ? '1~2학년' : g <= 4 ? '3~4학년' : '5~6학년';
         const normalizeUnitName = (v) => String(v || '')
@@ -268,7 +285,8 @@ function getCoreIdeaFromFile(subject, area) {
     try {
         const corePath = path.join(process.cwd(), '핵심아이디어.txt');
         if (!fs.existsSync(corePath)) return '';
-        const core = JSON.parse(fs.readFileSync(corePath, 'utf8'));
+        const core = readJsonCached(corePath);
+        if (!Array.isArray(core)) return '';
         const norm = (s) => (s || '').replace(/[·⋅]/g, '·').trim();
         const areaNorm = norm(area);
         const found = core.find(c => c.교과 === subject && c.영역 && (
@@ -567,7 +585,7 @@ async function handler(req, res) {
     const apiKey = (process.env.GEMINI_API_KEY || '').trim();
 
     if (!apiKey) {
-        return res.status(500).json({ error: 'API Key not configured', details: 'Vercel 환경 변수에 GEMINI_API_KEY를 설정하세요.' });
+        return res.status(500).json({ error: '서버 설정 오류로 생성할 수 없습니다.' });
     }
 
     const chasiContent = getChasiActivity(grade, subject || '국어', resolvedUnit, lesson);
@@ -782,7 +800,7 @@ ${lessonTypeActivityRule}
             error: 'AI 생성 실패',
             details: isOverloaded
                 ? 'Gemini 모델이 현재 과부하 상태입니다. 잠시 후 다시 시도해 주세요.'
-                : msg,
+                : '요청 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.',
         });
     }
 }

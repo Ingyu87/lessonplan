@@ -283,18 +283,27 @@ async function handleGenerate() {
 
     try {
         resetRecommendedModel();
-        const [generalPlan, inquiryPlan] = await Promise.all([
+        const results = await Promise.allSettled([
             fetchGeneratedPlan({ ...inputData, lessonType: 'general' }),
             fetchGeneratedPlan({ ...inputData, lessonType: 'inquiry' }),
         ]);
+        const generalResult = results[0];
+        const inquiryResult = results[1];
+        const generalPlan = generalResult.status === 'fulfilled' ? generalResult.value : null;
+        const inquiryPlan = inquiryResult.status === 'fulfilled' ? inquiryResult.value : null;
+        if (!generalPlan && !inquiryPlan) {
+            const firstError = (generalResult.status === 'rejected' ? generalResult.reason : inquiryResult.reason);
+            throw firstError || new Error('일반형/탐구형 생성이 모두 실패했습니다.');
+        }
 
-        generatedPlansByType = {
-            general: generalPlan,
-            inquiry: inquiryPlan,
-        };
-        activeResultTab = 'general';
+        generatedPlansByType = { general: generalPlan, inquiry: inquiryPlan };
+        activeResultTab = generalPlan ? 'general' : 'inquiry';
         syncResultTabUI();
         renderActiveResultPlan();
+        if (!generalPlan || !inquiryPlan) {
+            const missingType = !generalPlan ? '일반형' : '탐구형';
+            showToast(`${missingType} 생성은 실패하여 성공한 결과만 표시합니다.`);
+        }
 
         elements.resultSection.classList.remove('hidden');
         elements.resultSection.scrollIntoView({ behavior: 'smooth' });

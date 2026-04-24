@@ -2,6 +2,21 @@
 
 const path = require('path');
 const fs = require('fs');
+const jsonCache = new Map();
+
+function readJsonCached(filePath) {
+    try {
+        const stat = fs.statSync(filePath);
+        const mtimeMs = stat.mtimeMs;
+        const cached = jsonCache.get(filePath);
+        if (cached && cached.mtimeMs === mtimeMs) return cached.data;
+        const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+        jsonCache.set(filePath, { mtimeMs, data: parsed });
+        return parsed;
+    } catch (_) {
+        return null;
+    }
+}
 
 function getGradeBand(grade) {
     const g = parseInt(grade, 10);
@@ -16,11 +31,12 @@ function loadAnnualPlan() {
     const templatePath = path.join(baseDir, '연간지도_계획_템플릿.json');
     try {
         if (fs.existsSync(planPath)) {
-            const data = JSON.parse(fs.readFileSync(planPath, 'utf8'));
+            const data = readJsonCached(planPath);
             if (Array.isArray(data) && data.length > 0) return data;
         }
         if (fs.existsSync(templatePath)) {
-            return JSON.parse(fs.readFileSync(templatePath, 'utf8'));
+            const template = readJsonCached(templatePath);
+            return Array.isArray(template) ? template : [];
         }
     } catch (e) {
         console.warn('연간지도 계획 로드 실패:', e.message);
@@ -48,7 +64,8 @@ function getUnitList(subject, grade) {
     try {
         const standardsPath = path.join(process.cwd(), '2022개정교육과정 성취기준 및 해설.json');
         if (fs.existsSync(standardsPath)) {
-            const standards = JSON.parse(fs.readFileSync(standardsPath, 'utf8'));
+            const standards = readJsonCached(standardsPath);
+            if (!Array.isArray(standards)) return [];
             const filtered = standards.filter(s => s.교과 === subject && s.학년 === gradeBand && s.단원);
             const unitMap = new Map();
             filtered.forEach(s => {

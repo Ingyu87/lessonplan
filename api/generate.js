@@ -344,13 +344,7 @@ function normalizeToOneSentenceCoreIdea(text, contextFallback) {
     cleaned = cleaned.split(/(?<=[.?!])\s+/)[0]?.trim() || cleaned;
     cleaned = cleaned.replace(/[.?!]+$/g, '').trim();
     if (!cleaned) return '';
-    const strictForm = /^.+[은는]\s+.+이다$/;
-    if (strictForm.test(cleaned)) return `${cleaned}.`;
-    const body = cleaned.replace(/이다$/g, '').trim();
-    if (!body) return '';
-    const left = asPlainText(contextFallback || '해당 차시 학습 내용').replace(/[.?!]+$/g, '').trim();
-    const subject = left || '해당 차시 학습 내용';
-    return `${subject}은 ${body}이다.`;
+    return cleaned.endsWith('.') ? cleaned : `${cleaned}.`;
 }
 
 function buildFallbackCoreIdeaSentence(baseCoreIdea, subject, area, chasiContent, topic, objective) {
@@ -403,21 +397,58 @@ function isCoreIdeaAcceptable(coreIdea, keywords) {
     const idea = String(coreIdea || '').trim();
     if (!idea) return false;
     if (/핵심\s*아이디어/i.test(idea)) return false;
-    if (/본질은/.test(idea)) return false;
-    if (/해당 차시의 자료를 통해 표현되고 해석된다/.test(idea)) return false;
-    if (!/^.+[은는]\s+.+이다[.]?$/.test(idea)) return false;
+    if (/본질|바람직|중요하다|옳다|좋다|훌륭|필요하다/.test(idea)) return false;
     const oneSentenceLike = idea.split(/[.?!]\s*/).filter(Boolean).length <= 1;
+    const neutralPresentVerb = /(이다|한다|된다|형성된다|작용한다|나타난다|유지된다|변화한다|설명된다|해석된다|적용된다|비교된다|탐구된다|분석된다|연결된다|영향을 미친다)/.test(idea);
     const hitCount = countKeywordHits(idea, keywords);
-    return oneSentenceLike && hitCount >= 2;
+    return oneSentenceLike && neutralPresentVerb && hitCount >= 2;
 }
 
 function buildFallbackCoreIdeaSentenceByKeywords({ keywords, subject, area, chasiContent }) {
     const k1 = keywords[0] || '핵심 개념';
     const k2 = keywords[1] || '핵심 요소';
     const ctx = extractMeaningfulKeywords(chasiContent)[0] || extractMeaningfulKeywords(area)[0] || '';
-    if (ctx) return `${ctx} 활동은 ${k1}와 ${k2}의 관계를 이해하는 학습이다.`;
+    if (ctx) return `${ctx} 학습에서 ${k1}와 ${k2}의 관계는 탐구되고 설명된다.`;
     const s = asPlainText(subject || '해당 교과');
-    return `${s} 학습은 ${k1}와 ${k2}의 관계를 이해하는 학습이다.`;
+    return `${s} 학습에서 ${k1}와 ${k2}의 관계는 탐구되고 설명된다.`;
+}
+
+async function generateCoreIdeaByPrincipleAI(apiKey, options) {
+    const { subject, area, standard, chasiContent, unitName, lesson } = options || {};
+    if (!apiKey) return '';
+    const prompt = `다음 정보를 바탕으로 초등 ${asPlainText(subject)} 차시의 핵심 아이디어를 한 문장으로 작성하세요.
+
+[입력 정보]
+- 영역: ${asPlainText(area)}
+- 단원: ${asPlainText(unitName)}
+- 차시: ${asPlainText(lesson)}차시
+- 성취기준: ${asPlainText(standard)}
+- 차시별 주요 학습 내용: ${asPlainText(chasiContent)}
+
+[핵심 아이디어 작성 원칙]
+1) 개념 간 관계를 드러내는 문장 구조를 사용할 것.
+2) 현재형, 중립적 동사를 사용할 것.
+3) 개념어 중심으로 작성하고 지시문/활동 절차 표현은 제외할 것.
+4) 다른 맥락에도 전이 가능한 일반화 수준으로 진술할 것.
+5) 가치 판단 표현(바람직, 중요, 옳다 등)을 배제할 것.
+6) 한 문장만 출력할 것.
+
+예: 자연재해가 발생했을 때 지역사회는 함께 일한다.
+
+JSON으로만 답하세요:
+{"coreIdea":"..."}`;
+    try {
+        const { data } = await callGeminiWithFallback(apiKey, {
+            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            generationConfig: { responseMimeType: 'application/json' }
+        });
+        const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        const jsonStr = sanitizeJsonText(String(raw || '').replace(/```json/g, '').replace(/```/g, '').trim());
+        const parsed = JSON.parse(jsonStr);
+        return normalizeToOneSentenceCoreIdea(parsed?.coreIdea || '', chasiContent);
+    } catch (_) {
+        return '';
+    }
 }
 
 function isQuestionAcceptable(question, keywords, subject, area) {
@@ -760,38 +791,22 @@ ${lessonTypeActivityRule}
         if (selectedStandardRow?.영역) data.area = selectedStandardRow.영역;
         const resolvedArea = data.area || areaHint || selectedStandardRow?.영역 || '';
         const baseCoreIdea = getCoreIdeaFromFile(subject || '국어', resolvedArea) || coreIdeaSource;
-        const initialCoreIdea = normalizeToOneSentenceCoreIdea(
-            data.coreIdea || '',
-            chasiContent || data.topic || data.objective
-        );
-        let preparedCoreIdea = initialCoreIdea;
-        if (!isCoreIdeaAcceptable(preparedCoreIdea, buildKeywordPool({
+        const generatedCoreIdea = await generateCoreIdeaByPrincipleAI(apiKey, {
+            subject: subject || '국어',
+            area: resolvedArea,
             standard: data.standard,
             chasiContent,
+            unitName: resolvedUnit,
+            lesson
+        });
+        data.coreIdea = generatedCoreIdea || buildFallbackCoreIdeaSentence(
             baseCoreIdea,
-            area: resolvedArea,
-            subject: subject || '국어'
-        }))) {
-            const aiCoreIdea = await generateRestatedCoreIdeaSentenceByAI(apiKey, {
-                subject: subject || '국어',
-                area: resolvedArea,
-                baseCoreIdea,
-                chasiContent,
-                unitName: resolvedUnit,
-                lesson,
-                topic: data.topic,
-                objective: data.objective
-            });
-            preparedCoreIdea = aiCoreIdea || buildFallbackCoreIdeaSentence(
-                baseCoreIdea,
-                subject || '국어',
-                resolvedArea,
-                chasiContent,
-                data.topic,
-                data.objective
-            );
-        }
-        data.coreIdea = preparedCoreIdea;
+            subject || '국어',
+            resolvedArea,
+            chasiContent,
+            data.topic,
+            data.objective
+        );
         // 전교과 공통: 성취기준-핵심아이디어-탐구질문 정합성 강제
         let enforcedCoreIdea = enforceCoreIdeaByStandard({
             coreIdea: data.coreIdea,
@@ -819,7 +834,7 @@ ${lessonTypeActivityRule}
         });
 
         // 검증 실패 시 1회 AI 재보정 후 다시 검증
-        if (!isCoreIdeaAcceptable(enforcedCoreIdea, keywordPool) || !isQuestionAcceptable(enforcedQuestion, keywordPool, subject || '국어', resolvedArea)) {
+        if (!isQuestionAcceptable(enforcedQuestion, keywordPool, subject || '국어', resolvedArea)) {
             const repaired = await regenerateCoreIdeaAndQuestionByAI(apiKey, {
                 subject: subject || '국어',
                 area: resolvedArea,
@@ -830,14 +845,6 @@ ${lessonTypeActivityRule}
                 lesson,
                 currentCoreIdea: enforcedCoreIdea,
                 currentQuestion: enforcedQuestion
-            });
-            enforcedCoreIdea = enforceCoreIdeaByStandard({
-                coreIdea: repaired.coreIdea || enforcedCoreIdea,
-                standard: data.standard,
-                chasiContent,
-                baseCoreIdea,
-                area: resolvedArea,
-                subject: subject || '국어'
             });
             enforcedQuestion = enforceQuestionByStandard({
                 question: repaired.question || enforcedQuestion,

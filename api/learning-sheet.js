@@ -1,9 +1,9 @@
 /**
  * AI 학습지 생성 API: 차시 학습 내용을 바탕으로 학습지 HTML 생성 → PDF 인쇄용
  */
-export const config = { api: { bodyParser: true } };
+const config = { api: { bodyParser: true } };
 
-export default async function handler(req, res) {
+async function handler(req, res) {
     if (req.method !== 'POST') {
         return res.status(405).json({ error: 'Method Not Allowed' });
     }
@@ -101,3 +101,6 @@ export default async function handler(req, res) {
         });
     }
 }
+
+module.exports = handler;
+module.exports.config = config;

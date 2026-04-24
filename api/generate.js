@@ -1,15 +1,10 @@
 // Vercel Serverless Function: api/generate.js (REST API 사용 - ByteString 오류 회피)
 
-import path from 'path';
-import fs from 'fs';
-import { createRequire } from 'module';
-import { fileURLToPath } from 'url';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const require = createRequire(import.meta.url);
+const path = require('path');
+const fs = require('fs');
 const { selectSubjectCompetencies } = require(path.join(__dirname, '../lib/subject-competency-select.cjs'));
 
-export const config = { api: { bodyParser: true } };
+const config = { api: { bodyParser: true } };
 
 const GENERATION_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash'];
 
@@ -607,7 +602,7 @@ async function generateCoreIdeaByAI(apiKey, subject, area, unitName) {
     }
 }
 
-export default async function handler(req, res) {
+async function handler(req, res) {
     if (req.method !== 'POST') {
         return res.status(405).json({ error: 'Method Not Allowed' });
     }
@@ -877,3 +872,6 @@ ${lessonTypeActivityRule}
         });
     }
 }
+
+module.exports = handler;
+module.exports.config = config;

@@ -319,10 +319,28 @@ async function fetchGeneratedPlan(payload) {
         body: JSON.stringify(payload),
     });
     const rawText = await response.text();
-    const parsed = parseJsonLenient(rawText);
+    const contentType = (response.headers.get('content-type') || '').toLowerCase();
+    const isJsonResponse = contentType.includes('application/json');
+    let parsed = null;
+    if (isJsonResponse) {
+        try {
+            parsed = parseJsonLenient(rawText);
+        } catch (parseError) {
+            const message = `서버 JSON 응답 파싱 실패 (${response.status})`;
+            throw new Error(`${message}: ${parseError.message}`);
+        }
+    }
     if (!response.ok) {
-        const errData = parsed || {};
-        throw new Error(errData.details || errData.error || `API 호출 실패 (${response.status})`);
+        if (parsed) {
+            const errData = parsed || {};
+            throw new Error(errData.details || errData.error || `API 호출 실패 (${response.status})`);
+        }
+        const bodyPreview = String(rawText || '').replace(/\s+/g, ' ').trim().slice(0, 180);
+        const suffix = bodyPreview ? `: ${bodyPreview}` : '';
+        throw new Error(`서버 내부 오류(${response.status}) - JSON이 아닌 응답을 받았습니다${suffix}`);
+    }
+    if (!parsed) {
+        throw new Error(`API 호출 실패 (${response.status}) - JSON 응답이 아닙니다.`);
     }
     return parsed;
 }

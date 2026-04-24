@@ -1,7 +1,7 @@
 // Vercel Serverless: 단원 목록 조회 (연간지도_계획.json 기반)
 
-import path from 'path';
-import fs from 'fs';
+const path = require('path');
+const fs = require('fs');
 
 function getGradeBand(grade) {
     const g = parseInt(grade, 10);
@@ -69,7 +69,7 @@ function getUnitList(subject, grade) {
     return [];
 }
 
-export default function handler(req, res) {
+function handler(req, res) {
     if (req.method !== 'GET') {
         return res.status(405).json({ error: 'Method Not Allowed' });
     }
@@ -80,3 +80,5 @@ export default function handler(req, res) {
     const units = getUnitList(subject, grade);
     res.json({ units });
 }
+
+module.exports = handler;

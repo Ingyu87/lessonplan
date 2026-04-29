@@ -6,7 +6,7 @@ const { selectSubjectCompetencies } = require(path.join(__dirname, '../lib/subje
 
 const config = { api: { bodyParser: true } };
 
-const GENERATION_MODELS = ['gemini-2.5-flash', 'gemini-2.0-flash'];
+const GENERATION_MODELS = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash', 'gemini-2.0-pro-exp', 'gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-1.5-flash-8b'];
 const jsonCache = new Map();
 const GEMINI_RETRY_MAX = 2;
 const GEMINI_RETRY_BASE_MS = 700;
@@ -572,7 +572,7 @@ ${baseCoreIdea}
 async function generateCoreIdeaByAI(apiKey, subject, area, unitName) {
     if (!apiKey) return '';
     try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent`;
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${GENERATION_MODELS[0]}:generateContent`;
         const prompt = `${subject} 교과 ${area || '해당'} 영역의 핵심 아이디어를 2022 개정 교육과정 스타일로 한 문단(2~4문장)으로 작성하세요. 성취기준 코드([4국03-02] 등)는 넣지 말고, 해당 영역의 핵심 개념만 진술하세요.${unitName ? ` (단원: ${unitName})` : ''}`;
         const res = await fetch(url, {
             method: 'POST',

@@ -285,10 +285,8 @@ async function handleGenerate() {
 
     try {
         resetRecommendedModel();
-        const [generalPlan, inquiryPlan] = await Promise.all([
-            fetchGeneratedPlanWithRetry({ ...inputData, lessonType: 'general' }, '일반형'),
-            fetchGeneratedPlanWithRetry({ ...inputData, lessonType: 'inquiry' }, '탐구형'),
-        ]);
+        const generalPlan = await fetchGeneratedPlanWithRetry({ ...inputData, lessonType: 'general' }, '일반형');
+        const inquiryPlan = await fetchGeneratedPlanWithRetry({ ...inputData, lessonType: 'inquiry' }, '탐구형');
         generatedPlansByType = { general: generalPlan, inquiry: inquiryPlan };
         activeResultTab = 'general';
         syncResultTabUI();
